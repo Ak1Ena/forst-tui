@@ -64,7 +64,7 @@
 ## Phase 11: Visual Polish & Aesthetics
 - [ ] Integrate **Gradients and Themes** (e.g., Support for 'Nord', 'Dracula', 'Monokai' color schemes)
 - [x] Add **Animated Spinners** and progress bars for LLM "Thinking" and Tool "Acting" states
-- [ ] Implement **Syntax Highlighting** for code blocks within the ChatView
+- [x] Implement **Syntax Highlighting** for code blocks within the ChatView
 - [x] Use **Icons/Symbols** (Lucide-style) for different message types (User 👤, AI 🤖, Tool 🛠️, System ⚙️)
 
 ## Phase 12: Rich Content Rendering

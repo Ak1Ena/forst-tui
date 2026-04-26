@@ -2,6 +2,8 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { Message } from '../core/AppContext.js';
 
+import { CodeBlock } from './CodeBlock.js';
+
 interface Props {
     messages: Message[];
 }
@@ -17,6 +19,30 @@ export const ChatView = ({ messages }: Props) => {
         }
     };
 
+    const renderContent = (content: string) => {
+        const parts = content.split(/```(\w+)?\n([\s\S]*?)\n```/g);
+        const elements = [];
+
+        for (let i = 0; i < parts.length; i++) {
+            if (i % 3 === 0) {
+                // Text part
+                if (parts[i].trim()) {
+                    elements.push(<Text key={i}>{parts[i]}</Text>);
+                }
+            } else if (i % 3 === 1) {
+                // Language part (captured but skipped in this iteration)
+                continue;
+            } else {
+                // Code part
+                const language = parts[i - 1];
+                const code = parts[i];
+                elements.push(<CodeBlock key={i} code={code} language={language} />);
+            }
+        }
+
+        return elements;
+    };
+
     return (
         <Box flexDirection="column" paddingX={1}>
             {messages.length === 0 ? (
@@ -30,8 +56,8 @@ export const ChatView = ({ messages }: Props) => {
                                 {msg.role.toUpperCase()}
                             </Text>
                         </Box>
-                        <Box paddingLeft={3}>
-                            <Text>{msg.content}</Text>
+                        <Box paddingLeft={3} flexDirection="column">
+                            {renderContent(msg.content)}
                         </Box>
                     </Box>
                 ))
