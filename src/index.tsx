@@ -255,6 +255,9 @@ const App = () => {
             
             try {
                 const response = await activeProvider.instance.chat(currentMessages, getTools(), controller.signal);
+                if (!response) {
+                    throw new Error('Provider returned an empty response');
+                }
                 dispatch({ type: 'ADD_MESSAGE', payload: response });
                 saveMessage(sessionId, response);
                 currentMessages.push(response);
@@ -263,28 +266,45 @@ const App = () => {
                     dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
                     
                     for (const toolCall of response.tool_calls) {
+                        if (!toolCall) continue;
                         const tool = getTools().find(t => t.name === toolCall.name);
                         if (tool) {
                             dispatch({ type: 'START_TOOL', payload: toolCall.name });
-                            const result = await tool.invoke(toolCall.args);
-                            const toolMsg = { 
-                                role: 'tool' as const, 
-                                content: typeof result === 'string' ? result : JSON.stringify(result),
-                                tool_call_id: toolCall.id,
-                                name: toolCall.name,
-                                args: toolCall.args
-                            };
-                            dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
-                            saveMessage(sessionId, toolMsg);
-                            dispatch({ type: 'STOP_TOOL', payload: toolCall.name });
-                            currentMessages.push(toolMsg);
+                            try {
+                                const result = await tool.invoke(toolCall.args);
+                                const toolMsg = { 
+                                    role: 'tool' as const, 
+                                    content: typeof result === 'string' ? result : JSON.stringify(result || ''),
+                                    tool_call_id: toolCall.id,
+                                    name: toolCall.name,
+                                    args: toolCall.args
+                                };
+                                dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
+                                saveMessage(sessionId, toolMsg);
+                                currentMessages.push(toolMsg);
+                            } catch (toolError: any) {
+                                const errorMsg = { 
+                                    role: 'tool' as const, 
+                                    content: `Error executing tool: ${toolError?.message || String(toolError)}`,
+                                    tool_call_id: toolCall.id,
+                                    name: toolCall.name,
+                                    args: toolCall.args
+                                };
+                                dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
+                                saveMessage(sessionId, errorMsg);
+                                currentMessages.push(errorMsg);
+                            } finally {
+                                dispatch({ type: 'STOP_TOOL', payload: toolCall.name });
+                            }
                         }
                     }
                     iteration++;
                     continue; 
                 }
                 
-                await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                if (response.content) {
+                    await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                }
                 break; 
             } catch (error: any) {
                 if (error?.name === 'AbortError') {

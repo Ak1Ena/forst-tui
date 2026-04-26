@@ -1,15 +1,16 @@
 import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
+import { DynamicStructuredTool } from "@langchain/core/tools";
 
-export const writeFileTool = {
+export const writeFileTool = new DynamicStructuredTool({
     name: 'write_file',
     description: 'Write content to a file. Use this to create or update code files.',
     schema: z.object({
         filePath: z.string().describe('The path to the file to write'),
         content: z.string().describe('The content to write to the file'),
     }),
-    invoke: async ({ filePath, content }: { filePath: string; content: string }) => {
+    func: async ({ filePath, content }: { filePath: string; content: string }) => {
         try {
             const absolutePath = path.resolve(process.cwd(), filePath);
             
@@ -33,4 +34,4 @@ export const writeFileTool = {
             return `Error writing file: ${error?.message || String(error)}`;
         }
     }
-};
+});

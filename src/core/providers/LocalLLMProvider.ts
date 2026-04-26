@@ -40,9 +40,12 @@ export class LocalLLMProvider extends BaseProvider {
 
         
         const response = await modelWithTools.invoke(langchainMessages);
+        if (!response) {
+            throw new Error('Local LLM returned no response');
+        }
         return {
             role: 'assistant',
-            content: response.content as string,
+            content: (typeof response.content === 'string' ? response.content : JSON.stringify(response.content)) || '',
         };
     }
 
