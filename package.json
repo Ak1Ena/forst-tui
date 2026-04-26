@@ -28,6 +28,9 @@
   "homepage": "https://github.com/Ak1Ena/forst-tui#readme",
   "dependencies": {
     "@langchain/core": "^1.1.41",
+    "@langchain/google-genai": "^2.1.28",
+    "@langchain/ollama": "^1.2.6",
+    "@langchain/openai": "^1.4.4",
     "better-sqlite3": "^12.9.0",
     "ink": "^7.0.1",
     "langchain": "^1.3.4",

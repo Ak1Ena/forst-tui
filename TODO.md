@@ -12,10 +12,10 @@
 - [x] Create basic message history logging logic
 
 ## Phase 3: LLM Core & Providers
-- [ ] Implement `BaseProvider` abstract class
-- [ ] Implement `GeminiProvider`
-- [ ] Implement `LocalLLMProvider` (Ollama/LM Studio support)
-- [ ] Implement OpenAI/OpenRouter support
+- [x] Implement `BaseProvider` abstract class
+- [x] Implement `GeminiProvider`
+- [x] Implement `LocalLLMProvider` (Ollama/LM Studio support)
+- [x] Implement OpenAI/OpenRouter support
 
 ## Phase 4: Tool System (Plugin Pattern)
 - [ ] Create tool registration and discovery logic
