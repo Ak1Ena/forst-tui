@@ -32,10 +32,10 @@
 - [x] Create a sample monitor (e.g., system resource monitor or file watcher)
 
 ## Phase 6: TUI Components (The Interface)
-- [ ] `ChatView`: Scrollable message list with markdown-like formatting
-- [ ] `InputBar`: Multi-line text input with command support
-- [ ] `ToolStatus`: Visual feedback for active tool execution
-- [ ] `Sidebar/Settings`: UI for toggling providers and background tasks
+- [x] `ChatView`: Scrollable message list with markdown-like formatting
+- [x] `InputBar`: Multi-line text input with command support
+- [x] `ToolStatus`: Visual feedback for active tool execution
+- [x] `Sidebar/Settings`: UI for toggling providers and background tasks
 
 ## Phase 7: Orchestration & Integration
 - [ ] Connect LangChain agent loop with the Ink UI
