@@ -27,9 +27,9 @@
 - [x] Implement integration architecture (e.g., skeleton for Discord)
 
 ## Phase 5: Heartbeat & Background Tasks
-- [ ] Create the Heartbeat event loop
-- [ ] Implement user-controlled toggle logic for background tasks
-- [ ] Create a sample monitor (e.g., system resource monitor or file watcher)
+- [x] Create the Heartbeat event loop
+- [x] Implement user-controlled toggle logic for background tasks
+- [x] Create a sample monitor (e.g., system resource monitor or file watcher)
 
 ## Phase 6: TUI Components (The Interface)
 - [ ] `ChatView`: Scrollable message list with markdown-like formatting
