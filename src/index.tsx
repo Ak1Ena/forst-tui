@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, useRef} from 'react';
+import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {render, Box, useInput, Text} from 'ink';
 import {initSchema} from './database/schema.js';
 import {AppProvider, useAppContext} from './core/AppContext.js';
@@ -48,6 +48,22 @@ const App = () => {
 
     const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
+    const totalLines = useMemo(() => {
+        let count = 0;
+        state.messages.forEach((msg, i) => {
+            const isFirstTool = msg.role === 'tool' && (i === 0 || state.messages[i - 1].role !== 'tool');
+            if (msg.role !== 'tool' || isFirstTool) count += 1; // Header
+            
+            if (msg.role === 'tool') {
+                count += 1; // Tool name + args
+            } else {
+                count += msg.content.split('\n').length;
+            }
+            count += 1; // Spacing
+        });
+        return count;
+    }, [state.messages]);
+
     useInput((input, key) => {
         if (key.escape && state.agentState !== 'idle') {
             if (abortControllerRef.current) {
@@ -88,7 +104,7 @@ const App = () => {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
             }
             if (key.upArrow) {
-                setScrollOffset(prev => Math.min(prev + 1, Math.max(0, state.messages.length - 2)));
+                setScrollOffset(prev => Math.min(prev + 1, Math.max(0, totalLines - 5)));
             }
             if (key.downArrow) {
                 setScrollOffset(prev => Math.max(0, prev - 1));

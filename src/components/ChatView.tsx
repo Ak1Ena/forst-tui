@@ -20,81 +20,80 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
         }
     };
 
-    const renderContent = (content: string) => {
-        const parts = content.split(/```(\w+)?\n([\s\S]*?)\n```/g);
-        const elements = [];
+    // Helper to generate all lines for the chat
+    const allLines = useMemo(() => {
+        const lines: { text: string; color?: string; bold?: boolean; italic?: boolean }[] = [];
 
-        for (let i = 0; i < parts.length; i++) {
-            if (i % 3 === 0) {
-                if (parts[i].trim()) {
-                    elements.push(<Text key={i} wrap="wrap">{parts[i]}</Text>);
-                }
-            } else if (i % 3 === 1) {
-                continue;
-            } else {
-                const language = parts[i - 1];
-                const code = parts[i];
-                elements.push(<CodeBlock key={i} code={code} language={language} />);
+        messages.forEach((msg, msgIndex) => {
+            // Header for non-tool messages or first tool in a group
+            const isFirstTool = msg.role === 'tool' && (msgIndex === 0 || messages[msgIndex - 1].role !== 'tool');
+            
+            if (msg.role !== 'tool' || isFirstTool) {
+                const roleColor = msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'yellow';
+                lines.push({ 
+                    text: `${getIcon(msg.role)} ${msg.role.toUpperCase()}`, 
+                    color: roleColor, 
+                    bold: true 
+                });
             }
-        }
-        return elements;
-    };
 
-    const groupedMessages = useMemo(() => {
-        const groups: any[] = [];
-        messages.forEach((msg) => {
-            if (msg.role === 'tool' && groups.length > 0 && groups[groups.length - 1].role === 'tool_group') {
-                groups[groups.length - 1].tools.push(msg);
-            } else if (msg.role === 'tool') {
-                groups.push({ role: 'tool_group', tools: [msg] });
+            if (msg.role === 'tool') {
+                lines.push({ 
+                    text: `  🛠️ [${msg.name}] ${typeof msg.args === 'string' ? msg.args : JSON.stringify(msg.args || '')}`, 
+                    color: 'gray', 
+                    italic: true 
+                });
             } else {
-                groups.push(msg);
+                // Split content into lines and handle code blocks
+                const parts = msg.content.split('\n');
+                let inCodeBlock = false;
+                
+                parts.forEach(line => {
+                    if (line.startsWith('```')) {
+                        inCodeBlock = !inCodeBlock;
+                        lines.push({ text: `   ${line}`, color: 'yellow', bold: true });
+                    } else if (inCodeBlock) {
+                        lines.push({ text: `   ${line}`, color: 'blue' }); // Blue for code content
+                    } else if (line.trim()) {
+                        lines.push({ text: `   ${line}` });
+                    } else {
+                        lines.push({ text: '' });
+                    }
+                });
             }
+            
+            // Spacing between messages
+            lines.push({ text: '' });
         });
-        return groups;
+
+        return lines;
     }, [messages]);
 
-    // Simple message-based viewport
-    const visibleGroups = useMemo(() => {
-        const itemsToDisplay = Math.floor(height / 4); // Assume average 4 lines per message/group
-        const end = Math.max(0, groupedMessages.length - scrollOffset);
-        const start = Math.max(0, end - itemsToDisplay);
-        return groupedMessages.slice(start, end);
-    }, [groupedMessages, scrollOffset, height]);
+    // Viewport calculation
+    const visibleLines = useMemo(() => {
+        const totalLines = allLines.length;
+        const end = Math.max(0, totalLines - scrollOffset);
+        const start = Math.max(0, end - height);
+        return allLines.slice(start, end);
+    }, [allLines, scrollOffset, height]);
 
     return (
         <Box flexDirection="column" paddingX={1} height={height} overflowY="hidden">
             {messages.length === 0 ? (
                 <Text italic color="gray">No messages yet. Start a conversation!</Text>
             ) : (
-                visibleGroups.map((group, index) => {
-                    if (group.role === 'tool_group') {
-                        return (
-                            <Box key={index} flexDirection="column" marginBottom={1}>
-                                {group.tools.map((t: any, i: number) => (
-                                    <Box key={i} flexDirection="row">
-                                        <Text color="gray" italic>🛠️ [{t.name || 'tool'}]</Text>
-                                        <Text color="dim"> {typeof t.args === 'string' ? t.args : JSON.stringify(t.args || '')}</Text>
-                                    </Box>
-                                ))}
-                            </Box>
-                        );
-                    }
-
-                    return (
-                        <Box key={index} flexDirection="column" marginBottom={1}>
-                            <Box flexDirection="row">
-                                <Text wrap="wrap">{getIcon(group.role)} </Text>
-                                <Text bold wrap="wrap" color={group.role === 'user' ? 'blue' : group.role === 'assistant' ? 'green' : 'yellow'}>
-                                    {group.role.toUpperCase()}
-                                </Text>
-                            </Box>
-                            <Box paddingLeft={3} flexDirection="column">
-                                {renderContent(group.content)}
-                            </Box>
-                        </Box>
-                    );
-                })
+                visibleLines.map((line, index) => (
+                    <Box key={index}>
+                        <Text 
+                            color={line.color} 
+                            bold={line.bold} 
+                            italic={line.italic} 
+                            wrap="wrap"
+                        >
+                            {line.text}
+                        </Text>
+                    </Box>
+                ))
             )}
         </Box>
     );
