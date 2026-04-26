@@ -57,7 +57,11 @@ export const ChatView = ({ messages }: Props) => {
                             </Text>
                         </Box>
                         <Box paddingLeft={3} flexDirection="column">
-                            {renderContent(msg.content)}
+                            {msg.role === 'tool' ? (
+                                <Text color="gray" italic>[{msg.name || 'tool_result'}]</Text>
+                            ) : (
+                                renderContent(msg.content)
+                            )}
                         </Box>
                     </Box>
                 ))
