@@ -55,7 +55,8 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                     } else if (inCodeBlock) {
                         lines.push({ text: `   ${line}`, color: 'blue' }); // Blue for code content
                     } else if (line.trim()) {
-                        lines.push({ text: `   ${line}` });
+                        const isError = msg.role === 'system' && line.toLowerCase().includes('error');
+                        lines.push({ text: `   ${line}`, color: isError ? 'red' : undefined });
                     } else {
                         lines.push({ text: '' });
                     }

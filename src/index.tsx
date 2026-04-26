@@ -8,10 +8,11 @@ import {ChatView} from './components/ChatView.js';
 import {InputBar} from './components/InputBar.js';
 import {ToolStatus} from './components/ToolStatus.js';
 import {StatusHeader} from './components/StatusHeader.js';
-import {Sidebar} from './components/Sidebar.js';
-import {SettingsView} from './components/SettingsView.js';
-import {GeminiProvider} from './core/providers/GeminiProvider.js';
-import {saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions} from './database/messages.js';
+import { Sidebar } from './components/Sidebar.js';
+import { SettingsView } from './components/SettingsView.js';
+import { SessionListView } from './components/SessionListView.js';
+import { GeminiProvider } from './core/providers/GeminiProvider.js';
+import { saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions } from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
@@ -22,9 +23,9 @@ const App = () => {
     const {state, dispatch} = useAppContext();
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
-    const [view, setView] = useState<'chat' | 'settings'>('chat');
+    const [view, setView] = useState<'chat' | 'settings' | 'sessions'>('chat');
     const [sessionId, setSessionId] = useState<number>(0);
-    const [sessionList, setSessionList] = useState<{id: number, name: string}[]>([]);
+    const [sessionList, setSessionList] = useState<{id: number, name: string, created_at: string}[]>([]);
     const [scrollOffset, setScrollOffset] = useState(0);
     const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -71,6 +72,12 @@ const App = () => {
                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
             }
+            return;
+        }
+
+        if (input === 'r' && key.ctrl) {
+            setSessionList(getSessions());
+            setView('sessions');
             return;
         }
 
@@ -269,6 +276,19 @@ const App = () => {
         <Box flexDirection="column" height="100%">
             {view === 'settings' ? (
                 <SettingsView onClose={() => setView('chat')} />
+            ) : view === 'sessions' ? (
+                <SessionListView 
+                    sessions={sessionList} 
+                    currentSessionId={sessionId}
+                    onClose={() => setView('chat')}
+                    onSelect={(id) => {
+                        setSessionId(id);
+                        const msgs = getMessages(id);
+                        dispatch({ type: 'SET_MESSAGES', payload: msgs });
+                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
+                        setView('chat');
+                    }}
+                />
             ) : (
                 <>
                     <StatusHeader 
@@ -306,7 +326,7 @@ const App = () => {
                     <ToolStatus activeTools={state.activeTools} agentState={state.agentState} />
                     
                     <Box marginTop={0}>
-                        <InputBar onSubmit={handleSendMessage} />
+                        <InputBar onSubmit={handleSendMessage} tools={getTools()} />
                     </Box>
                 </>
             )}
