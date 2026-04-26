@@ -5,6 +5,7 @@
 - [x] Install core dependencies (Ink, LangChain, React, Better-SQLite3, zod)
 - [x] Create directory structure (`src/core`, `src/tools`, `src/components`, `src/database`)
 - [x] Set up basic Ink "Hello World" entry point in `src/index.ts`
+- [x] Add Node version management (`.nvmrc`)
 
 ## Phase 2: Database & State
 - [x] Initialize SQLite database schema for persistent memory
