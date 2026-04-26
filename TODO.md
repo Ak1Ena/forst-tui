@@ -54,3 +54,27 @@
 - [x] Implement `VectorStore` wrapper in `src/database/vectorStore.ts`
 - [x] Integrate auto-embedding of messages into the chat loop
 - [x] Add a search tool for semantic memory retrieval
+
+## Phase 10: Advanced UI Layout & Panels
+- [x] Implement a **Dynamic Sidebar** for system stats and active background tasks
+- [x] Create a **Two-Column Layout** (Left: Chat, Right: Tools & System Info)
+- [x] Add a **Header Dashboard** with real-time status icons (LLM Status, DB connection, Network)
+- [ ] Implement **Tabs/Views** to switch between Chat, History, and Settings
+
+## Phase 11: Visual Polish & Aesthetics
+- [ ] Integrate **Gradients and Themes** (e.g., Support for 'Nord', 'Dracula', 'Monokai' color schemes)
+- [x] Add **Animated Spinners** and progress bars for LLM "Thinking" and Tool "Acting" states
+- [ ] Implement **Syntax Highlighting** for code blocks within the ChatView
+- [x] Use **Icons/Symbols** (Lucide-style) for different message types (User 👤, AI 🤖, Tool 🛠️, System ⚙️)
+
+## Phase 12: Rich Content Rendering
+- [ ] Implement **Markdown Parsing** for bold, italic, and list items in chat messages
+- [x] Create a **Table Component** for displaying structured tool outputs (e.g., file lists, process info)
+- [ ] Add **Scroll Indicators** and better viewport management for long conversations
+- [ ] Implement **Breadcrumbs** for showing the current chain of thought/tool execution path
+
+## Phase 13: Interactive Experience
+- [x] Add **Keyboard Shortcuts** (e.g., `Ctrl+L` to clear chat)
+- [x] Implement a **Command Palette** (accessible via `/`) for quick actions (change provider, clear chat, toggle heartbeat)
+- [ ] Create **Modal/Overlay** support for settings and detailed tool logs
+- [ ] Add **Sound/Notification support** (optional) for background task alerts

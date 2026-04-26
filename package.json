@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.tsx",
+    "dev": "node --import tsx src/index.tsx",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run"

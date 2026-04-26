@@ -7,6 +7,16 @@ interface Props {
 }
 
 export const ChatView = ({ messages }: Props) => {
+    const getIcon = (role: string) => {
+        switch (role) {
+            case 'user': return '👤';
+            case 'assistant': return '🤖';
+            case 'system': return '⚙️';
+            case 'tool': return '🛠️';
+            default: return '•';
+        }
+    };
+
     return (
         <Box flexDirection="column" paddingX={1}>
             {messages.length === 0 ? (
@@ -14,10 +24,15 @@ export const ChatView = ({ messages }: Props) => {
             ) : (
                 messages.map((msg, index) => (
                     <Box key={index} flexDirection="column" marginBottom={1}>
-                        <Text bold color={msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'yellow'}>
-                            {msg.role.toUpperCase()}
-                        </Text>
-                        <Text>{msg.content}</Text>
+                        <Box flexDirection="row">
+                            <Text>{getIcon(msg.role)} </Text>
+                            <Text bold color={msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'yellow'}>
+                                {msg.role.toUpperCase()}
+                            </Text>
+                        </Box>
+                        <Box paddingLeft={3}>
+                            <Text>{msg.content}</Text>
+                        </Box>
                     </Box>
                 ))
             )}
