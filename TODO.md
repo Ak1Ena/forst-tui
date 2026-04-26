@@ -6,6 +6,7 @@
 - [x] Create directory structure (`src/core`, `src/tools`, `src/components`, `src/database`)
 - [x] Set up basic Ink "Hello World" entry point in `src/index.ts`
 - [x] Add Node version management (`.nvmrc`)
+- [x] Configure npm to handle dependency conflicts (`.npmrc`)
 
 ## Phase 2: Database & State
 - [x] Initialize SQLite database schema for persistent memory
