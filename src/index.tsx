@@ -20,7 +20,7 @@ import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
-import {SYSTEM_PROMPT} from './core/Prompts.js';
+import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
 import {HumanMessage, AIMessage, SystemMessage, ToolMessage} from '@langchain/core/messages';
 import { Client } from "langsmith";
@@ -267,7 +267,7 @@ const App = () => {
         
         // Map messages to LangChain format
         const langchainMessages = [
-            new SystemMessage(SYSTEM_PROMPT),
+            new SystemMessage(getSystemPrompt()),
             ...state.messages.map(m => {
                 if (m.role === 'user') return new HumanMessage(m.content);
                 if (m.role === 'assistant') return new AIMessage({ content: m.content, tool_calls: m.tool_calls });

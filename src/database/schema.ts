@@ -60,4 +60,14 @@ export const initSchema = () => {
             value TEXT
         );
     `);
+
+    // 5. Create core_memories table for AI soul / Identity
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS core_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL CHECK(category IN ('ai', 'user', 'world')),
+            content TEXT NOT NULL UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
 };
