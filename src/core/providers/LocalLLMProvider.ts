@@ -27,12 +27,13 @@ export class LocalLLMProvider extends BaseProvider {
 
     async chat(messages: Message[], tools?: any[]): Promise<Message> {
         const langchainMessages = this.mapMessages(messages);
-        let modelWithTools = this.model;
+        let modelWithTools: any = this.model;
         if (tools && tools.length > 0) {
-            modelWithTools = this.model.bind({
+            modelWithTools = (this.model as any).bind({
                 tools: tools,
-            }) as any;
+            });
         }
+
         
         const response = await modelWithTools.invoke(langchainMessages);
         return {

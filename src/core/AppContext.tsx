@@ -35,7 +35,7 @@ const AppContext = createContext<{
 function appReducer(state: State, action: Action): State {
     switch (action.type) {
         case 'ADD_MESSAGE':
-            return { ...state, messages: [...state, action.payload] };
+            return { ...state, messages: [...state.messages, action.payload] };
         case 'SET_MESSAGES':
             return { ...state, messages: action.payload };
         case 'SET_AGENT_STATE':

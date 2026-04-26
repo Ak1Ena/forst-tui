@@ -20,7 +20,7 @@ export const InputBar = ({ onSubmit, placeholder = "Type a message..." }: Props)
     return (
         <Box borderStyle="single" paddingX={1}>
             <Box marginRight={1}>
-                <Text bold color="cyan">></Text>
+                <Text bold color="cyan">{'>'}</Text>
             </Box>
             <TextInput
                 value={query}
