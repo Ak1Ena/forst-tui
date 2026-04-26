@@ -7,9 +7,9 @@
 - [x] Set up basic Ink "Hello World" entry point in `src/index.ts`
 
 ## Phase 2: Database & State
-- [ ] Initialize SQLite database schema for persistent memory
-- [ ] Implement global state management (Zustand or React Context)
-- [ ] Create basic message history logging logic
+- [x] Initialize SQLite database schema for persistent memory
+- [x] Implement global state management (Zustand or React Context)
+- [x] Create basic message history logging logic
 
 ## Phase 3: LLM Core & Providers
 - [ ] Implement `BaseProvider` abstract class
