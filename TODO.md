@@ -43,6 +43,6 @@
 - [x] Implement error handling and "interrupt" capability
 
 ## Phase 8: Refinement & Testing
-- [ ] Add unit tests for core logic
-- [ ] Polish UI aesthetics (colors, borders, spinners)
-- [ ] Finalize documentation and usage guide
+- [x] Add unit tests for core logic
+- [x] Polish UI aesthetics (colors, borders, spinners)
+- [x] Finalize documentation and usage guide
