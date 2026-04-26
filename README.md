@@ -3,11 +3,36 @@
 A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
 
 ## Features
-- **Provider Agnostic**: Supports Gemini, OpenAI, OpenRouter, and LocalLLMs (Ollama).
-- **Tool System**: Modular plugin pattern for extending capabilities (run commands, read files, search web).
-- **Background Tasks**: Heartbeat system for monitoring background events (user-controllable).
-- **Persistent Memory**: SQLite-backed message history.
-- **Modern TUI**: Built with React-style components using Ink.
+
+### 🤖 Multi-Provider LLM Support
+- **Provider Agnostic**: Supports Gemini, OpenAI, OpenRouter, and LocalLLMs (Ollama/LM Studio)
+- **Dynamic Configuration**: Add and switch providers in real-time via settings
+
+### 🛠️ Tool System (Plugin Pattern)
+- **System Tools**: Run shell commands, read/write files
+- **Web Tools**: Search the web (DuckDuckGo)
+- **Discord Integration**: Send messages to Discord channels
+- Easy-to-extend plugin architecture for adding new tools
+
+### 💾 Persistent Memory
+- **SQLite-backed** message history
+- **Vector Database** (hnswlib-node) for semantic memory retrieval
+- Auto-embedding of messages with semantic search capability
+
+### ⚡ Background Tasks
+- **Heartbeat System**: Monitor background events (user-controllable)
+- Sample monitors for system resources and file watching
+
+### 🎨 Modern TUI Interface
+- **Two-Column Layout**: Chat on left, tools & system info on right
+- **Dynamic Sidebar**: System stats and active background tasks
+- **Header Dashboard**: Real-time status icons (LLM, DB, Network)
+- **Command Palette**: Quick actions via `/` (change provider, clear chat, toggle heartbeat)
+- **Keyboard Shortcuts**: e.g., `Ctrl+L` to clear chat
+- **Animated Spinners**: Visual feedback for "Thinking" and "Acting" states
+- **Syntax Highlighting**: Code blocks in chat
+- **Table Component**: Structured tool outputs
+- **Icons**: User 👤, AI 🤖, Tool 🛠️, System ⚙️
 
 ## Setup
 
@@ -33,10 +58,10 @@ A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
    ```
 
 ## Project Structure
-- `src/core`: Orchestration, providers, and state management.
-- `src/tools`: Tool definitions and registration.
-- `src/components`: Ink TUI components.
-- `src/database`: SQLite schema and history logic.
+- `src/core`: Orchestration, providers, ConfigManager, and state management
+- `src/tools`: Tool definitions and registration
+- `src/components`: Ink TUI components
+- `src/database`: SQLite schema, history logic, and vector store
 
 ## License
 MIT
