@@ -9,6 +9,7 @@ import {InputBar} from './components/InputBar.js';
 import {ToolStatus} from './components/ToolStatus.js';
 import {StatusHeader} from './components/StatusHeader.js';
 import {Sidebar} from './components/Sidebar.js';
+import {SettingsView} from './components/SettingsView.js';
 import {GeminiProvider} from './core/providers/GeminiProvider.js';
 import {saveMessage, getMessages} from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
@@ -19,6 +20,7 @@ const App = () => {
     const {state, dispatch} = useAppContext();
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
+    const [view, setView] = useState<'chat' | 'settings'>('chat');
 
     // Initialize Provider from Config
     const [activeProvider] = useState(() => {
@@ -33,6 +35,9 @@ const App = () => {
     useInput((input, key) => {
         if (input === 'l' && key.ctrl) {
             dispatch({ type: 'SET_MESSAGES', payload: [] });
+        }
+        if (input === 's' && key.ctrl) {
+            setView(prev => prev === 'chat' ? 'settings' : 'chat');
         }
     });
 
@@ -108,25 +113,31 @@ const App = () => {
 
     return (
         <Box flexDirection="column" height="100%">
-            <StatusHeader 
-                provider={activeProvider.config.name} 
-                model={activeProvider.config.model} 
-                agentState={state.agentState} 
-            />
-            
-            <Box flexGrow={1} flexDirection="row" marginTop={1}>
-                <Box flexGrow={1} borderStyle="single" borderColor="blue">
-                    <ChatView messages={state.messages} />
-                </Box>
-                
-                <Sidebar systemStats={systemStats} tasks={tasks} />
-            </Box>
+            {view === 'settings' ? (
+                <SettingsView onClose={() => setView('chat')} />
+            ) : (
+                <>
+                    <StatusHeader 
+                        provider={activeProvider.config.name} 
+                        model={activeProvider.config.model} 
+                        agentState={state.agentState} 
+                    />
+                    
+                    <Box flexGrow={1} flexDirection="row" marginTop={1}>
+                        <Box flexGrow={1} borderStyle="single" borderColor="blue">
+                            <ChatView messages={state.messages} />
+                        </Box>
+                        
+                        <Sidebar systemStats={systemStats} tasks={tasks} />
+                    </Box>
 
-            <ToolStatus activeTools={state.activeTools} agentState={state.agentState} />
-            
-            <Box marginTop={0}>
-                <InputBar onSubmit={handleSendMessage} />
-            </Box>
+                    <ToolStatus activeTools={state.activeTools} agentState={state.agentState} />
+                    
+                    <Box marginTop={0}>
+                        <InputBar onSubmit={handleSendMessage} />
+                    </Box>
+                </>
+            )}
         </Box>
     );
 };
