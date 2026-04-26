@@ -38,9 +38,9 @@
 - [x] `Sidebar/Settings`: UI for toggling providers and background tasks
 
 ## Phase 7: Orchestration & Integration
-- [ ] Connect LangChain agent loop with the Ink UI
-- [ ] Ensure tool outputs are streamed to the UI in real-time
-- [ ] Implement error handling and "interrupt" capability
+- [x] Connect LangChain agent loop with the Ink UI
+- [x] Ensure tool outputs are streamed to the UI in real-time
+- [x] Implement error handling and "interrupt" capability
 
 ## Phase 8: Refinement & Testing
 - [ ] Add unit tests for core logic
