@@ -46,3 +46,9 @@
 - [x] Add unit tests for core logic
 - [x] Polish UI aesthetics (colors, borders, spinners)
 - [x] Finalize documentation and usage guide
+
+## Phase 9: Vector Database (Semantic Memory)
+- [x] Install `hnswlib-node` and embedding dependencies
+- [x] Implement `VectorStore` wrapper in `src/database/vectorStore.ts`
+- [x] Integrate auto-embedding of messages into the chat loop
+- [x] Add a search tool for semantic memory retrieval

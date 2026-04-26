@@ -5,7 +5,8 @@ A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
 - **LangChain**: Orchestrates AI agents and tool-calling capabilities.
 - **Ink**: React-style TUI for managing complex state and UI rendering in the terminal.
 - **TypeScript**: Ensures type safety across providers and tool interfaces.
-- **Better-SQLite3**: For persistent memory and conversation history.
+- **Better-SQLite3**: For structured data (settings, message logs).
+- **HNSWLib**: Local vector database for semantic memory and RAG (Retrieval-Augmented Generation).
 
 ## Project Structure
 ```text
@@ -14,14 +15,12 @@ A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
     /core           # Orchestration, LLM provider logic, agent loops
       /providers    # OpenAI, Gemini, Anthropic, LocalLLM implementations
     /tools          # Modular tool definitions (Plugin pattern)
-      /system       # run_command, read_files
-      /web          # search, read_pdf
-      /integrations # Discord, Slack, etc.
-    /components     # Ink React components (ChatView, ToolStatus, InputBar)
-    /database       # SQLite schema and migration logic
-    index.ts        # TUI Entry point
-  /data             # Local storage for .sqlite and persistent logs
-  /tests            # Unit and integration tests
+    /components     # Ink React components
+    /database       # SQLite schema and Vector Store logic
+    index.tsx       # TUI Entry point
+  /data             # Local storage for .sqlite and vector indices
+```
+
 ```
 
 ## Architectural Mandates

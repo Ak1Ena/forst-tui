@@ -10,19 +10,24 @@ import {ToolStatus} from './components/ToolStatus.js';
 import {StatusHeader} from './components/StatusHeader.js';
 import {GeminiProvider} from './core/providers/GeminiProvider.js';
 import {saveMessage, getMessages} from './database/messages.js';
+import {VectorMemory} from './database/vectorStore.js';
 
 const App = () => {
     const {state, dispatch} = useAppContext();
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     
     // Initialize Provider (Mocking API key for now)
+    const apiKey = process.env['GOOGLE_GENERATIVE_AI_API_KEY'] || 'mock-key';
     const provider = new GeminiProvider({
-        apiKey: process.env['GOOGLE_GENERATIVE_AI_API_KEY'] || 'mock-key',
+        apiKey: apiKey,
         model: 'gemini-pro'
     });
 
+    const [vectorMemory] = useState(() => new VectorMemory(apiKey));
+
     useEffect(() => {
         initSchema();
+        vectorMemory.init();
         
         // Load initial messages
         const initialMessages = getMessages();
@@ -49,6 +54,7 @@ const App = () => {
         const userMsg = { role: 'user' as const, content: text };
         dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
         saveMessage(userMsg);
+        await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now() });
 
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
@@ -58,6 +64,7 @@ const App = () => {
             
             dispatch({ type: 'ADD_MESSAGE', payload: response });
             saveMessage(response);
+            await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now() });
         } catch (error: any) {
             const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
             dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
