@@ -8,25 +8,28 @@ const VECTOR_STORE_PATH = path.join(process.cwd(), 'data', 'vector_store');
 
 export class VectorMemory {
     private vectorStore: HNSWLib | null = null;
-    private embeddings: GoogleGenerativeAIEmbeddings;
+    private embeddings: GoogleGenerativeAIEmbeddings | null = null;
+    private apiKey: string;
 
     constructor(apiKey: string) {
-        this.embeddings = new GoogleGenerativeAIEmbeddings({
-            apiKey: apiKey,
-            modelName: "embedding-001",
-        });
+        this.apiKey = apiKey;
+        if (apiKey && apiKey !== 'mock-key') {
+            this.embeddings = new GoogleGenerativeAIEmbeddings({
+                apiKey: apiKey,
+                modelName: "embedding-001",
+            });
+        }
     }
 
     async init() {
+        if (!this.embeddings) return;
         if (fs.existsSync(VECTOR_STORE_PATH)) {
             this.vectorStore = await HNSWLib.load(VECTOR_STORE_PATH, this.embeddings);
-        } else {
-            // Initialize empty if doesn't exist
-            // HNSWLib requires at least one document to save, so we'll do that on first addition
         }
     }
 
     async addMessage(content: string, metadata: Record<string, any>) {
+        if (!this.embeddings) return;
         const doc = new Document({ pageContent: content, metadata });
         
         if (!this.vectorStore) {

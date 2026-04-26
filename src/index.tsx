@@ -39,6 +39,8 @@ const App = () => {
         }
     });
 
+    const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
+
     useInput((input, key) => {
         if (input === 'l' && key.ctrl) {
             dispatch({ type: 'SET_MESSAGES', payload: [] });
@@ -55,6 +57,10 @@ const App = () => {
                                 config,
                                 error: null
                             });
+                            // Re-initialize Vector Memory with new key
+                            const newVM = new VectorMemory(config.apiKey || '');
+                            newVM.init();
+                            setVectorMemory(newVM);
                         }
                     } catch (e: any) {
                         setActiveProvider(prev => ({ ...prev, error: e.message }));
@@ -64,8 +70,6 @@ const App = () => {
             });
         }
     });
-
-    const [vectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
     useEffect(() => {
         initSchema();
@@ -90,7 +94,7 @@ const App = () => {
             heartbeat.off('task-result', handleResult);
             heartbeat.disableTask('system-monitor');
         };
-    }, []);
+    }, [vectorMemory]);
 
     const handleSendMessage = async (text: string) => {
         if (!activeProvider.instance) {
