@@ -11,7 +11,7 @@ import {StatusHeader} from './components/StatusHeader.js';
 import {Sidebar} from './components/Sidebar.js';
 import {SettingsView} from './components/SettingsView.js';
 import {GeminiProvider} from './core/providers/GeminiProvider.js';
-import {saveMessage, getMessages} from './database/messages.js';
+import {saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions} from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
@@ -23,6 +23,8 @@ const App = () => {
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
     const [view, setView] = useState<'chat' | 'settings'>('chat');
+    const [sessionId, setSessionId] = useState<number>(0);
+    const [sessionList, setSessionList] = useState<{id: number, name: string}[]>([]);
 
     // Initialize Provider from Config
     const [activeProvider, setActiveProvider] = useState<{instance: any, config: any, error: string | null}>(() => {
@@ -44,7 +46,6 @@ const App = () => {
     const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
     useInput((input, key) => {
-        // Handle Ctrl+S toggle globally
         if (input === 's' && key.ctrl) {
             setView(prev => {
                 const nextView = prev === 'chat' ? 'settings' : 'chat';
@@ -70,7 +71,6 @@ const App = () => {
             return;
         }
 
-        // Only handle other global shortcuts if NOT in settings view
         if (view === 'chat') {
             if (input === 'l' && key.ctrl) {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
@@ -80,10 +80,23 @@ const App = () => {
 
     useEffect(() => {
         initSchema();
-        vectorMemory.init();
         
-        const initialMessages = getMessages();
+        let currentSid = getLastSession();
+        if (currentSid) {
+            const count = getSessionMessageCount(Number(currentSid));
+            if (count > 0) {
+                currentSid = Number(createSession());
+            }
+        } else {
+            currentSid = Number(createSession());
+        }
+        
+        setSessionId(Number(currentSid));
+        setSessionList(getSessions());
+        const initialMessages = getMessages(Number(currentSid));
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
+
+        vectorMemory.init();
 
         heartbeat.registerTask(systemMonitorTask);
         heartbeat.enableTask('system-monitor');
@@ -110,26 +123,51 @@ const App = () => {
         }
 
         if (text.startsWith('/')) {
-            const command = text.slice(1).toLowerCase();
+            const parts = text.slice(1).split(' ');
+            const command = parts[0].toLowerCase();
+            
+            if (command === 'session') {
+                const subCommand = parts[1]?.toLowerCase();
+                if (subCommand === 'list') {
+                    const sess = getSessions();
+                    const list = sess.map(s => `[${s.id}] ${s.name}`).join('\n');
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Sessions:\n${list}` } });
+                    return;
+                }
+                if (subCommand === 'new') {
+                    const newSid = Number(createSession());
+                    setSessionId(newSid);
+                    setSessionList(getSessions());
+                    dispatch({ type: 'SET_MESSAGES', payload: [] });
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Switched to new session [${newSid}]` } });
+                    return;
+                }
+                if (subCommand === 'load') {
+                    const targetId = parseInt(parts[2]);
+                    if (!isNaN(targetId)) {
+                        setSessionId(targetId);
+                        const msgs = getMessages(targetId);
+                        dispatch({ type: 'SET_MESSAGES', payload: msgs });
+                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${targetId}]` } });
+                        return;
+                    }
+                }
+            }
+
             if (command === 'clear') {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
                 return;
             }
             if (command === 'help') {
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Available commands: /clear, /help, /tasks' } });
-                return;
-            }
-            if (command === 'tasks') {
-                const taskList = tasks.map(t => `${t.name}: ${t.enabled ? 'Enabled' : 'Disabled'}`).join('\n');
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Background Tasks:\n${taskList}` } });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>], /clear, /help, /tasks' } });
                 return;
             }
         }
 
         let userMsg = { role: 'user' as const, content: text };
         dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
-        saveMessage(userMsg);
-        await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now() });
+        saveMessage(sessionId, userMsg);
+        await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
         const systemMsg = { role: 'system' as const, content: SYSTEM_PROMPT };
         let currentMessages = [systemMsg, ...state.messages, userMsg];
@@ -142,7 +180,7 @@ const App = () => {
             try {
                 const response = await activeProvider.instance.chat(currentMessages, getTools());
                 dispatch({ type: 'ADD_MESSAGE', payload: response });
-                saveMessage(response);
+                saveMessage(sessionId, response);
                 currentMessages.push(response);
 
                 if (response.tool_calls && response.tool_calls.length > 0) {
@@ -160,6 +198,7 @@ const App = () => {
                                 name: toolCall.name
                             };
                             dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
+                            saveMessage(sessionId, toolMsg);
                             dispatch({ type: 'STOP_TOOL', payload: toolCall.name });
                             currentMessages.push(toolMsg);
                         }
@@ -168,7 +207,7 @@ const App = () => {
                     continue; 
                 }
                 
-                await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now() });
+                await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
                 break; 
             } catch (error: any) {
                 const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
@@ -178,7 +217,7 @@ const App = () => {
             }
         }
         dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
-    }, [activeProvider, state.messages, vectorMemory, tasks, dispatch]);
+    }, [activeProvider, state.messages, vectorMemory, tasks, dispatch, sessionId]);
 
     return (
         <Box flexDirection="column" height="100%">
@@ -202,7 +241,7 @@ const App = () => {
                             <ChatView messages={state.messages} height={process.stdout.rows - 10} />
                         </Box>
                         
-                        <Sidebar systemStats={systemStats} tasks={tasks} />
+                        <Sidebar systemStats={systemStats} tasks={tasks} sessions={sessionList} currentSessionId={sessionId} />
                     </Box>
 
                     <ToolStatus activeTools={state.activeTools} agentState={state.agentState} />

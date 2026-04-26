@@ -13,7 +13,7 @@ export const CodeBlock = ({ code, language }: Props) => {
             // Highlight keywords
             const parts = line.split(/(\s+)/);
             return (
-                <Box key={i}>
+                <Text key={i} wrap="wrap">
                     {parts.map((part, j) => {
                         if (/^(const|let|var|function|return|if|else|for|while|import|export|from|class|extends|async|await)$/.test(part)) {
                             return <Text key={j} color="blue">{part}</Text>;
@@ -29,19 +29,21 @@ export const CodeBlock = ({ code, language }: Props) => {
                         }
                         return <Text key={j}>{part}</Text>;
                     })}
-                </Box>
+                </Text>
             );
         });
     };
 
     return (
-        <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="round" borderColor="gray" backgroundColor="#1e1e1e" width="100%">
+        <Box flexDirection="column" paddingX={1} marginY={1} borderStyle="round" borderColor="gray" backgroundColor="#1e1e1e" maxWidth={process.stdout.columns - 40}>
             {language && (
                 <Box borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} marginBottom={1}>
                     <Text bold color="yellow">{language.toUpperCase()}</Text>
                 </Box>
             )}
-            {highlight(code)}
+            <Box flexDirection="column">
+                {highlight(code)}
+            </Box>
         </Box>
     );
 };

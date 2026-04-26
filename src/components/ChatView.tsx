@@ -42,7 +42,7 @@ export const ChatView = ({ messages, height = 20 }: Props) => {
         for (let i = 0; i < parts.length; i++) {
             if (i % 3 === 0) {
                 if (parts[i].trim()) {
-                    elements.push(<Text key={i}>{parts[i]}</Text>);
+                    elements.push(<Text key={i} wrap="wrap">{parts[i]}</Text>);
                 }
             } else if (i % 3 === 1) {
                 continue;
@@ -56,13 +56,27 @@ export const ChatView = ({ messages, height = 20 }: Props) => {
         return elements;
     };
 
-    // Calculate visible messages (simplified viewport)
-    // We show the last N messages minus the scroll offset
-    const visibleMessages = useMemo(() => {
-        const start = Math.max(0, messages.length - height - scrollOffset);
-        const end = Math.max(0, messages.length - scrollOffset);
-        return messages.slice(start, end);
-    }, [messages, scrollOffset, height]);
+    // Helper to group messages (consecutive tools together)
+    const groupedMessages = useMemo(() => {
+        const groups: any[] = [];
+        messages.forEach((msg, i) => {
+            if (msg.role === 'tool' && groups.length > 0 && groups[groups.length - 1].role === 'tool_group') {
+                groups[groups.length - 1].tools.push(msg);
+            } else if (msg.role === 'tool') {
+                groups.push({ role: 'tool_group', tools: [msg] });
+            } else {
+                groups.push(msg);
+            }
+        });
+        return groups;
+    }, [messages]);
+
+    // Calculate visible groups
+    const visibleGroups = useMemo(() => {
+        const start = Math.max(0, groupedMessages.length - height - scrollOffset);
+        const end = Math.max(0, groupedMessages.length - scrollOffset);
+        return groupedMessages.slice(start, end);
+    }, [groupedMessages, scrollOffset, height]);
 
     return (
         <Box flexDirection="column" paddingX={1} height={height}>
@@ -75,23 +89,32 @@ export const ChatView = ({ messages, height = 20 }: Props) => {
             {messages.length === 0 ? (
                 <Text italic color="gray">No messages yet. Start a conversation!</Text>
             ) : (
-                visibleMessages.map((msg, index) => (
-                    <Box key={index} flexDirection="column" marginBottom={1}>
-                        <Box flexDirection="row">
-                            <Text>{getIcon(msg.role)} </Text>
-                            <Text bold color={msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'yellow'}>
-                                {msg.role.toUpperCase()}
-                            </Text>
+                visibleGroups.map((group, index) => {
+                    if (group.role === 'tool_group') {
+                        return (
+                            <Box key={index} flexDirection="row" marginBottom={1}>
+                                <Text>🛠️ </Text>
+                                {group.tools.map((t: any, i: number) => (
+                                    <Text key={i} color="gray" italic>[{t.name || 'tool'}]</Text>
+                                ))}
+                            </Box>
+                        );
+                    }
+
+                    return (
+                        <Box key={index} flexDirection="column" marginBottom={1}>
+                            <Box flexDirection="row">
+                                <Text wrap="wrap">{getIcon(group.role)} </Text>
+                                <Text bold wrap="wrap" color={group.role === 'user' ? 'blue' : group.role === 'assistant' ? 'green' : 'yellow'}>
+                                    {group.role.toUpperCase()}
+                                </Text>
+                            </Box>
+                            <Box paddingLeft={3} flexDirection="column">
+                                {renderContent(group.content)}
+                            </Box>
                         </Box>
-                        <Box paddingLeft={3} flexDirection="column">
-                            {msg.role === 'tool' ? (
-                                <Text color="gray" italic>[{msg.name || 'tool_result'}]</Text>
-                            ) : (
-                                renderContent(msg.content)
-                            )}
-                        </Box>
-                    </Box>
-                ))
+                    );
+                })
             )}
         </Box>
     );
