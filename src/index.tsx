@@ -280,33 +280,50 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
 
         try {
-            const result = await appWorkflow.invoke(
+            const config = {
+                configurable: { thread_id: sessionId.toString() },
+                recursionLimit: 20
+            };
+
+            const stream = await appWorkflow.stream(
                 { messages: langchainMessages },
-                { signal: controller.signal }
+                config
             );
 
-            // Process the messages from the result to update UI and DB
-            const newMessages = result.messages.slice(langchainMessages.length);
-            
-            for (const msg of newMessages) {
-                let role: 'assistant' | 'tool' | 'system' = 'assistant';
-                if (msg instanceof ToolMessage) role = 'tool';
-                else if (msg instanceof SystemMessage) role = 'system';
-                
-                const formattedMsg = {
-                    role,
-                    content: (msg.content as string) || '',
-                    tool_calls: (msg as any).tool_calls,
-                    tool_call_id: (msg as any).tool_call_id,
-                    name: (msg as any).name,
-                    args: (msg as any).args
-                };
-                
-                dispatch({ type: 'ADD_MESSAGE', payload: formattedMsg });
-                saveMessage(sessionId, formattedMsg);
-                
-                if (role === 'assistant' && formattedMsg.content) {
-                    await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+            for await (const chunk of stream) {
+                const nodeName = Object.keys(chunk)[0];
+                const output = (chunk as any)[nodeName];
+
+                if (output && output.messages) {
+                    const newMsgs = output.messages;
+                    for (const msg of newMsgs) {
+                        let role: 'assistant' | 'tool' | 'system' = 'assistant';
+                        if (msg instanceof ToolMessage) role = 'tool';
+                        else if (msg instanceof SystemMessage) role = 'system';
+                        else if (msg instanceof AIMessage) role = 'assistant';
+                        
+                        const formattedMsg = {
+                            role,
+                            content: (msg.content as string) || '',
+                            tool_calls: (msg as any).tool_calls,
+                            tool_call_id: (msg as any).tool_call_id,
+                            name: (msg as any).name,
+                            args: (msg as any).args
+                        };
+                        
+                        dispatch({ type: 'ADD_MESSAGE', payload: formattedMsg });
+                        saveMessage(sessionId, formattedMsg);
+                        
+                        if (role === 'tool') {
+                            dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
+                        } else {
+                            dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
+                        }
+
+                        if (role === 'assistant' && formattedMsg.content) {
+                            await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                        }
+                    }
                 }
             }
 
