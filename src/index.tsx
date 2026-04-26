@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {render, Box, useInput, Text} from 'ink';
 import { spawnSync } from 'child_process';

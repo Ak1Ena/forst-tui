@@ -3,10 +3,19 @@
   "version": "0.1.0",
   "description": "A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.",
   "main": "dist/index.js",
+  "bin": {
+    "forst-tui": "dist/index.js"
+  },
   "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "scripts": {
     "dev": "node --import tsx src/index.tsx",
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
     "test": "vitest run",
     "rebuild": "npm rebuild better-sqlite3 hnswlib-node"
