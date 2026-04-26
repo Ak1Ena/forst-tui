@@ -3,8 +3,9 @@ import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Document } from "@langchain/core/documents";
 import path from "path";
 import fs from "fs";
+import { GLOBAL_DIR } from "../core/ConfigManager.js";
 
-const VECTOR_STORE_PATH = path.join(process.cwd(), 'data', 'vector_store');
+const VECTOR_STORE_PATH = path.join(GLOBAL_DIR, 'vector_store');
 
 export class VectorMemory {
     private vectorStore: HNSWLib | null = null;

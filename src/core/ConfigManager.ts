@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export interface ProviderConfig {
     id: string;
@@ -17,7 +18,13 @@ export interface AppSettings {
     providers: ProviderConfig[];
 }
 
-const CONFIG_PATH = path.join(process.cwd(), 'settings.config.json');
+export const GLOBAL_DIR = path.join(os.homedir(), '.forst-tui');
+const CONFIG_PATH = path.join(GLOBAL_DIR, 'settings.config.json');
+
+// Ensure global directory exists
+if (!fs.existsSync(GLOBAL_DIR)) {
+    fs.mkdirSync(GLOBAL_DIR, { recursive: true });
+}
 
 const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',
