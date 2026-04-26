@@ -104,7 +104,8 @@ const App = () => {
                             setVectorMemory(newVM);
                         }
                     } catch (e: any) {
-                        setActiveProvider(prev => ({ ...prev, error: e?.message || String(e) }));
+                        const errorMsg = e?.error?.message || e?.message || String(e);
+                        setActiveProvider(prev => ({ ...prev, error: `Init Failed: ${errorMsg}` }));
                     }
                 }
                 return nextView;
@@ -348,7 +349,18 @@ const App = () => {
             if (error?.name === 'AbortError') {
                 // Handled
             } else {
-                const errorMsg = { role: 'system' as const, content: `Error: ${error?.message || String(error)}` };
+                let errorMessage = error?.message || String(error);
+                
+                // Try to extract more info from common SDK error structures
+                if (error?.error?.message) {
+                    errorMessage = `${errorMessage} - ${error.error.message}`;
+                } else if (error?.response?.data?.error?.message) {
+                    errorMessage = `${errorMessage} - ${error.response.data.error.message}`;
+                } else if (error?.cause) {
+                    errorMessage = `${errorMessage} (Cause: ${error.cause?.message || String(error.cause)})`;
+                }
+
+                const errorMsg = { role: 'system' as const, content: `Error: ${errorMessage}` };
                 dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
             }
