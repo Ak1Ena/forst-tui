@@ -15,7 +15,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { SettingsView } from './components/SettingsView.js';
 import { SessionListView } from './components/SessionListView.js';
 import { GeminiProvider } from './core/providers/GeminiProvider.js';
-import { saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions } from './database/messages.js';
+import { saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions, updateSessionName, deleteSession } from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
@@ -228,6 +228,20 @@ const App = () => {
                         return;
                     }
                 }
+                if (subCommand === 'delete') {
+                    const targetId = parseInt(parts[2]);
+                    if (!isNaN(targetId)) {
+                        deleteSession(targetId);
+                        setSessionList(getSessions());
+                        if (targetId === sessionId) {
+                            const newSid = Number(createSession());
+                            setSessionId(newSid);
+                            dispatch({ type: 'SET_MESSAGES', payload: [] });
+                        }
+                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Deleted session [${targetId}]` } });
+                        return;
+                    }
+                }
             }
 
             if (command === 'clear') {
@@ -235,7 +249,7 @@ const App = () => {
                 return;
             }
             if (command === 'help') {
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>], /clear, /help, /tasks' } });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>|delete <id>], /clear, /help, /tasks, /code <file>' } });
                 return;
             }
         }
@@ -304,6 +318,24 @@ const App = () => {
                 
                 if (response.content) {
                     await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                }
+
+                // Automatic Titling after first response
+                if (iteration === 0 && state.messages.length === 0) {
+                    try {
+                        const titlePrompt = [
+                            { role: 'system' as const, content: 'You are a session titler. Generate a very short, 3-5 word title for this conversation based on the user\'s first message. Return ONLY the title, no quotes or punctuation.' },
+                            userMsg
+                        ];
+                        const titleResponse = await activeProvider.instance.chat(titlePrompt, [], controller.signal);
+                        if (titleResponse.content) {
+                            const newTitle = titleResponse.content.trim().slice(0, 50);
+                            updateSessionName(sessionId, newTitle);
+                            setSessionList(getSessions());
+                        }
+                    } catch (e) {
+                        // Ignore titling errors
+                    }
                 }
                 break; 
             } catch (error: any) {

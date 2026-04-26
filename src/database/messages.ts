@@ -24,6 +24,18 @@ export const getSessions = () => {
     return stmt.all() as { id: number, name: string, created_at: string }[];
 };
 
+export const updateSessionName = (id: number, name: string) => {
+    const stmt = db.prepare('UPDATE sessions SET name = ? WHERE id = ?');
+    stmt.run(name, id);
+};
+
+export const deleteSession = (id: number) => {
+    db.transaction(() => {
+        db.prepare('DELETE FROM messages WHERE session_id = ?').run(id);
+        db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+    })();
+};
+
 export const saveMessage = (sessionId: number, message: Message, provider?: string, model?: string) => {
     const stmt = db.prepare(`
         INSERT INTO messages (session_id, role, content, provider, model, tool_calls, tool_call_id, name, args)
