@@ -64,7 +64,9 @@ export const SettingsView = ({ onClose }: Props) => {
             <Text bold color="magenta">⚙️ SETTINGS (Ctrl+S or ESC to close)</Text>
             <Box borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} marginBottom={1} />
             
-            <Text color="yellow" marginBottom={1}>Editing: {activeProvider.name}</Text>
+            <Box marginBottom={1}>
+                <Text color="yellow">Editing: {activeProvider.name}</Text>
+            </Box>
             
             {renderField('Name', activeProvider.name, 0)}
             {renderField('Model', activeProvider.model, 1)}

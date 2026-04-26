@@ -1,0 +1,14 @@
+{
+  "defaultProvider": "gemini-default",
+  "theme": "default",
+  "providers": [
+    {
+      "id": "gemini-default",
+      "name": "Gemini (Default)",
+      "type": "gemini",
+      "apiKey": "",
+      "model": "gemini-pro",
+      "enabled": true
+    }
+  ]
+}

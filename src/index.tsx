@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {render, Box, useInput} from 'ink';
+import {render, Box, useInput, Text} from 'ink';
 import {initSchema} from './database/schema.js';
 import {AppProvider, useAppContext} from './core/AppContext.js';
 import {heartbeat} from './core/Heartbeat.js';
@@ -23,13 +23,20 @@ const App = () => {
     const [view, setView] = useState<'chat' | 'settings'>('chat');
 
     // Initialize Provider from Config
-    const [activeProvider] = useState(() => {
-        const config = configManager.getActiveProvider();
-        if (!config) throw new Error('No active provider found in config');
-        return {
-            instance: ProviderFactory.create(config),
-            config
-        };
+    const [activeProvider, setActiveProvider] = useState<{instance: any, config: any, error: string | null}>(() => {
+        try {
+            const config = configManager.getActiveProvider();
+            if (!config || (!config.apiKey && config.type !== 'ollama')) {
+                return { instance: null, config: config || null, error: 'Missing API Key' };
+            }
+            return {
+                instance: ProviderFactory.create(config),
+                config,
+                error: null
+            };
+        } catch (e: any) {
+            return { instance: null, config: configManager.getActiveProvider() || null, error: e.message };
+        }
     });
 
     useInput((input, key) => {
@@ -37,21 +44,36 @@ const App = () => {
             dispatch({ type: 'SET_MESSAGES', payload: [] });
         }
         if (input === 's' && key.ctrl) {
-            setView(prev => prev === 'chat' ? 'settings' : 'chat');
+            setView(prev => {
+                const nextView = prev === 'chat' ? 'settings' : 'chat';
+                if (nextView === 'chat') {
+                    try {
+                        const config = configManager.getActiveProvider();
+                        if (config && (config.apiKey || config.type === 'ollama')) {
+                            setActiveProvider({
+                                instance: ProviderFactory.create(config),
+                                config,
+                                error: null
+                            });
+                        }
+                    } catch (e: any) {
+                        setActiveProvider(prev => ({ ...prev, error: e.message }));
+                    }
+                }
+                return nextView;
+            });
         }
     });
 
-    const [vectorMemory] = useState(() => new VectorMemory(activeProvider.config.apiKey || ''));
+    const [vectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
     useEffect(() => {
         initSchema();
         vectorMemory.init();
         
-        // Load initial messages
         const initialMessages = getMessages();
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
 
-        // Register background tasks
         heartbeat.registerTask(systemMonitorTask);
         heartbeat.enableTask('system-monitor');
         setTasks(heartbeat.getTasks().map(t => ({ name: t.name, enabled: t.enabled })));
@@ -71,6 +93,11 @@ const App = () => {
     }, []);
 
     const handleSendMessage = async (text: string) => {
+        if (!activeProvider.instance) {
+            dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '⚠️ Provider not configured. Press Ctrl+S to set your API Key.' } });
+            return;
+        }
+
         if (text.startsWith('/')) {
             const command = text.slice(1).toLowerCase();
             if (command === 'clear') {
@@ -96,9 +123,7 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
         try {
-            // Simplified agent call
             const response = await activeProvider.instance.chat([...state.messages, userMsg]);
-            
             dispatch({ type: 'ADD_MESSAGE', payload: response });
             saveMessage(response);
             await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now() });
@@ -118,13 +143,18 @@ const App = () => {
             ) : (
                 <>
                     <StatusHeader 
-                        provider={activeProvider.config.name} 
-                        model={activeProvider.config.model} 
-                        agentState={state.agentState} 
+                        provider={activeProvider.config?.name || 'None'} 
+                        model={activeProvider.config?.model || 'None'} 
+                        agentState={activeProvider.error ? 'error' : state.agentState} 
                     />
                     
                     <Box flexGrow={1} flexDirection="row" marginTop={1}>
-                        <Box flexGrow={1} borderStyle="single" borderColor="blue">
+                        <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="column">
+                            {activeProvider.error && (
+                                <Box padding={1} backgroundColor="red">
+                                    <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
+                                </Box>
+                            )}
                             <ChatView messages={state.messages} />
                         </Box>
                         
