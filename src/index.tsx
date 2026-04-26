@@ -368,6 +368,17 @@ const App = () => {
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
                         setView('chat');
                     }}
+                    onDelete={(id) => {
+                        deleteSession(id);
+                        const updated = getSessions();
+                        setSessionList(updated);
+                        if (id === sessionId) {
+                            // If deleting active session, create a new one
+                            const newSid = Number(createSession());
+                            setSessionId(newSid);
+                            dispatch({ type: 'SET_MESSAGES', payload: [] });
+                        }
+                    }}
                 />
             ) : (
                 <>
