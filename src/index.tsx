@@ -361,6 +361,7 @@ const App = () => {
     );
 };
 
+console.clear();
 render(
     <AppProvider>
         <App />

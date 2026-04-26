@@ -26,6 +26,9 @@ export const Sidebar = ({ systemStats, tasks, sessions = [], currentSessionId }:
                         {s.id === currentSessionId ? '●' : '○'} {s.name.slice(0, 20)}
                     </Text>
                 ))}
+                <Box marginTop={1}>
+                    <Text color="gray" dimColor italic>Press Ctrl+R to switch</Text>
+                </Box>
             </Box>
 
             <Box borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} marginBottom={1} />
