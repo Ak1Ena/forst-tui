@@ -15,7 +15,7 @@ export const runCommandTool = new DynamicTool({
             }
             return stdout || "Command executed successfully with no output.";
         } catch (error: any) {
-            return `Execution failed: ${error.message}`;
+            return `Execution failed: ${error?.message || String(error)}`;
         }
     },
 });

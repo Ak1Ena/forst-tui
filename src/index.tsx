@@ -1,5 +1,7 @@
 import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
 import {render, Box, useInput, Text} from 'ink';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
 import {initSchema} from './database/schema.js';
 import {AppProvider, useAppContext} from './core/AppContext.js';
 import {heartbeat} from './core/Heartbeat.js';
@@ -43,7 +45,7 @@ const App = () => {
                 error: null
             };
         } catch (e: any) {
-            return { instance: null, config: configManager.getActiveProvider() || null, error: e.message };
+            return { instance: null, config: configManager.getActiveProvider() || null, error: e?.message || String(e) };
         }
     });
 
@@ -98,7 +100,7 @@ const App = () => {
                             setVectorMemory(newVM);
                         }
                     } catch (e: any) {
-                        setActiveProvider(prev => ({ ...prev, error: e.message }));
+                        setActiveProvider(prev => ({ ...prev, error: e?.message || String(e) }));
                     }
                 }
                 return nextView;
@@ -174,6 +176,31 @@ const App = () => {
             const parts = text.slice(1).split(' ');
             const command = parts[0].toLowerCase();
             
+            if (command === 'code') {
+                const filePath = parts[1];
+                if (!filePath) {
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Usage: /code <file_path>' } });
+                    return;
+                }
+                
+                try {
+                    // Open vim
+                    spawnSync('vim', [filePath], { stdio: 'inherit' });
+                    
+                    // After vim exits, show the code
+                    if (fs.existsSync(filePath)) {
+                        const content = fs.readFileSync(filePath, 'utf8');
+                        const preview = `Edited ${filePath}:\n\`\`\`\n${content}\n\`\`\``;
+                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: preview } });
+                    } else {
+                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `File ${filePath} not found after edit.` } });
+                    }
+                } catch (e: any) {
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Error opening vim: ${e?.message || String(e)}` } });
+                }
+                return;
+            }
+
             if (command === 'session') {
                 const subCommand = parts[1]?.toLowerCase();
                 if (subCommand === 'list') {
@@ -259,10 +286,10 @@ const App = () => {
                 await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
                 break; 
             } catch (error: any) {
-                if (error.name === 'AbortError') {
+                if (error?.name === 'AbortError') {
                     break;
                 }
-                const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
+                const errorMsg = { role: 'system' as const, content: `Error: ${error?.message || String(error)}` };
                 dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
                 break;

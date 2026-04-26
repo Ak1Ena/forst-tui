@@ -12,6 +12,7 @@ const COMMANDS = [
     { name: 'session list', description: 'List all sessions' },
     { name: 'session new', description: 'Create a new session' },
     { name: 'session load', description: 'Load a session by ID' },
+    { name: 'code', description: 'Edit a file using vim' },
     { name: 'clear', description: 'Clear current chat' },
     { name: 'help', description: 'Show help' },
     { name: 'tasks', description: 'Show active tasks' }

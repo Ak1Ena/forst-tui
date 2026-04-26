@@ -20,7 +20,7 @@ export const listFilesTool = new DynamicTool({
                 ? `Contents of ${targetPath}:\n${list.join("\n")}` 
                 : `Directory ${targetPath} is empty.`;
         } catch (error: any) {
-            return `Error listing files: ${error.message}`;
+            return `Error listing files: ${error?.message || String(error)}`;
         }
     },
 });

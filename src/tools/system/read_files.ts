@@ -15,7 +15,7 @@ export const readFilesTool = new DynamicTool({
                 const content = await fs.readFile(absolutePath, "utf-8");
                 results.push(`--- ${filePath} ---\n${content}`);
             } catch (error: any) {
-                results.push(`--- ${filePath} ---\nError: ${error.message}`);
+                results.push(`--- ${filePath} ---\nError: ${error?.message || String(error)}`);
             }
         }
 
