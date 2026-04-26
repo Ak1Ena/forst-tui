@@ -1,5 +1,6 @@
 import { runCommandTool } from "./system/run_command.js";
 import { readFilesTool } from "./system/read_files.js";
+import { listFilesTool } from "./system/list_files.js";
 import { searchTool } from "./web/search.js";
 import { discordSendMessageTool } from "./integrations/discord.js";
 
@@ -8,6 +9,7 @@ export type ToolDefinition = any; // Loosen type for mixed tool sources
 export const registry: any[] = [
     runCommandTool,
     readFilesTool,
+    listFilesTool,
     searchTool,
     discordSendMessageTool
 ];

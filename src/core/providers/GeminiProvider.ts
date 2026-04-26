@@ -30,9 +30,13 @@ export class GeminiProvider extends BaseProvider {
         const langchainMessages = this.mapMessages(messages);
         let modelWithTools: any = this.model;
         if (tools && tools.length > 0) {
-            modelWithTools = (this.model as any).bind({
-                tools: tools,
-            });
+            if (typeof (this.model as any).bindTools === 'function') {
+                modelWithTools = (this.model as any).bindTools(tools);
+            } else {
+                modelWithTools = (this.model as any).bind({
+                    tools: tools,
+                });
+            }
         }
         
         const response = await modelWithTools.invoke(langchainMessages);

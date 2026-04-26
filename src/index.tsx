@@ -16,6 +16,7 @@ import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
+import {SYSTEM_PROMPT} from './core/Prompts.js';
 
 const App = () => {
     const {state, dispatch} = useAppContext();
@@ -130,7 +131,8 @@ const App = () => {
         saveMessage(userMsg);
         await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now() });
 
-        let currentMessages = [...state.messages, userMsg];
+        const systemMsg = { role: 'system' as const, content: SYSTEM_PROMPT };
+        let currentMessages = [systemMsg, ...state.messages, userMsg];
         let iteration = 0;
         const maxIterations = 5;
 

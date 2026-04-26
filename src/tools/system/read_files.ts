@@ -4,7 +4,7 @@ import path from "path";
 
 export const readFilesTool = new DynamicTool({
     name: "read_files",
-    description: "Reads the content of one or more files. Input should be a file path or a comma-separated list of file paths.",
+    description: "Reads the content of one or more files on the local disk. Use this to read source code, documentation, or any project files. Input should be a relative or absolute file path.",
     func: async (input: string) => {
         const paths = input.split(",").map(p => p.trim());
         const results = [];
