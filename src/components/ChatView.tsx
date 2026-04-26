@@ -37,13 +37,30 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 });
             }
 
-            if (msg.role === 'tool') {
-                lines.push({ 
-                    text: `  🛠️ [${msg.name}] ${typeof msg.args === 'string' ? msg.args : JSON.stringify(msg.args || '')}`, 
-                    color: 'gray', 
-                    italic: true 
+            if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+                msg.tool_calls.forEach(tc => {
+                    const argStr = typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args);
+                    lines.push({ 
+                        text: `   🛠️ CALL: [${tc.name}] ${argStr}`, 
+                        color: 'magenta', 
+                        italic: true 
+                    });
                 });
-            } else {
+            }
+
+            if (msg.role === 'tool') {
+                const result = msg.content.length > 200 ? msg.content.slice(0, 200) + '...' : msg.content;
+                lines.push({ 
+                    text: `   🛠️ RESULT: [${msg.name}]`, 
+                    color: 'cyan', 
+                    bold: true
+                });
+                result.split('\n').forEach(line => {
+                    if (line.trim()) {
+                        lines.push({ text: `     ${line}`, color: 'gray' });
+                    }
+                });
+            } else if (msg.content) {
                 // Split content into lines and handle code blocks
                 const parts = msg.content.split('\n');
                 let inCodeBlock = false;

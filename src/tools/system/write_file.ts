@@ -29,7 +29,8 @@ export const writeFileTool = new DynamicStructuredTool({
             
             // Return a summary and a preview of the file
             const lineCount = content.split('\n').length;
-            return `Successfully wrote ${lineCount} lines to ${filePath}.\n\nPreview:\n\`\`\`\n${content.slice(0, 500)}${content.length > 500 ? '...' : ''}\n\`\`\``;
+            const directory = path.dirname(absolutePath);
+            return `Successfully wrote ${lineCount} lines to ${filePath}.\nDirectory: ${directory}\n\nPreview:\n\`\`\`\n${content.slice(0, 500)}${content.length > 500 ? '...' : ''}\n\`\`\``;
         } catch (error: any) {
             return `Error writing file: ${error?.message || String(error)}`;
         }
