@@ -19,12 +19,15 @@ export interface AppSettings {
 }
 
 export const GLOBAL_DIR = path.join(os.homedir(), '.forst-tui');
+export const SKILLS_DIR = path.join(GLOBAL_DIR, 'skills');
 const CONFIG_PATH = path.join(GLOBAL_DIR, 'settings.config.json');
 
-// Ensure global directory exists
-if (!fs.existsSync(GLOBAL_DIR)) {
-    fs.mkdirSync(GLOBAL_DIR, { recursive: true });
-}
+// Ensure directories exist
+[GLOBAL_DIR, SKILLS_DIR].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+});
 
 const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',

@@ -3,6 +3,7 @@ import { readFilesTool } from "./system/read_files.js";
 import { listFilesTool } from "./system/list_files.js";
 import { writeFileTool } from "./system/write_file.js";
 import { memoryTool } from "./system/memory.js";
+import { skillsTool } from "./system/skills.js";
 import { searchTool } from "./web/search.js";
 import { discordSendMessageTool } from "./integrations/discord.js";
 
@@ -14,6 +15,7 @@ export const registry: any[] = [
     listFilesTool,
     writeFileTool,
     memoryTool,
+    skillsTool,
     searchTool,
     discordSendMessageTool
 ];
