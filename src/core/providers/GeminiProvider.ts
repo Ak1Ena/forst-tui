@@ -57,4 +57,8 @@ export class GeminiProvider extends BaseProvider {
             yield chunk.content as string;
         }
     }
+
+    getModel() {
+        return this.model;
+    }
 }

@@ -15,4 +15,5 @@ export abstract class BaseProvider {
 
     abstract chat(messages: Message[], tools?: any[], signal?: AbortSignal): Promise<Message>;
     abstract streamChat(messages: Message[], tools?: any[], signal?: AbortSignal): AsyncGenerator<string, void, unknown>;
+    abstract getModel(): any;
 }

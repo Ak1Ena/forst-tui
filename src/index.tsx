@@ -21,6 +21,9 @@ import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
 import {SYSTEM_PROMPT} from './core/Prompts.js';
+import {createAgentWorkflow} from './core/Workflow.js';
+import {HumanMessage, AIMessage, SystemMessage, ToolMessage} from '@langchain/core/messages';
+import { Client } from "langsmith";
 
 const App = () => {
     const {state, dispatch} = useAppContext();
@@ -259,97 +262,83 @@ const App = () => {
         saveMessage(sessionId, userMsg);
         await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
-        const systemMsg = { role: 'system' as const, content: SYSTEM_PROMPT };
-        let currentMessages = [systemMsg, ...state.messages, userMsg];
-        let iteration = 0;
-        const maxIterations = 5;
+        const appWorkflow = createAgentWorkflow(activeProvider.instance);
+        
+        // Map messages to LangChain format
+        const langchainMessages = [
+            new SystemMessage(SYSTEM_PROMPT),
+            ...state.messages.map(m => {
+                if (m.role === 'user') return new HumanMessage(m.content);
+                if (m.role === 'assistant') return new AIMessage({ content: m.content, tool_calls: m.tool_calls });
+                if (m.role === 'system') return new SystemMessage(m.content);
+                if (m.role === 'tool') return new ToolMessage({ content: m.content, tool_call_id: m.tool_call_id || '', name: m.name });
+                return new HumanMessage(m.content);
+            }),
+            new HumanMessage(text)
+        ];
 
-        while (iteration < maxIterations) {
-            dispatch({ type: 'SET_AGENT_STATE', payload: iteration === 0 ? 'thinking' : 'acting' });
+        dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
+
+        try {
+            const result = await appWorkflow.invoke(
+                { messages: langchainMessages },
+                { signal: controller.signal }
+            );
+
+            // Process the messages from the result to update UI and DB
+            const newMessages = result.messages.slice(langchainMessages.length);
             
-            try {
-                const response = await activeProvider.instance.chat(currentMessages, getTools(), controller.signal);
-                if (!response) {
-                    throw new Error('Provider returned an empty response');
-                }
-                dispatch({ type: 'ADD_MESSAGE', payload: response });
-                saveMessage(sessionId, response);
-                currentMessages.push(response);
-
-                if (response.tool_calls && response.tool_calls.length > 0) {
-                    dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
-                    
-                    for (const toolCall of response.tool_calls) {
-                        if (!toolCall) continue;
-                        const tool = getTools().find(t => t.name === toolCall.name);
-                        if (tool) {
-                            dispatch({ type: 'START_TOOL', payload: toolCall.name });
-                            try {
-                                const result = await tool.invoke(toolCall.args);
-                                const toolMsg = { 
-                                    role: 'tool' as const, 
-                                    content: typeof result === 'string' ? result : JSON.stringify(result || ''),
-                                    tool_call_id: toolCall.id,
-                                    name: toolCall.name,
-                                    args: toolCall.args
-                                };
-                                dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
-                                saveMessage(sessionId, toolMsg);
-                                currentMessages.push(toolMsg);
-                            } catch (toolError: any) {
-                                const errorMsg = { 
-                                    role: 'tool' as const, 
-                                    content: `Error executing tool: ${toolError?.message || String(toolError)}`,
-                                    tool_call_id: toolCall.id,
-                                    name: toolCall.name,
-                                    args: toolCall.args
-                                };
-                                dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
-                                saveMessage(sessionId, errorMsg);
-                                currentMessages.push(errorMsg);
-                            } finally {
-                                dispatch({ type: 'STOP_TOOL', payload: toolCall.name });
-                            }
-                        }
-                    }
-                    iteration++;
-                    continue; 
-                }
+            for (const msg of newMessages) {
+                let role: 'assistant' | 'tool' | 'system' = 'assistant';
+                if (msg instanceof ToolMessage) role = 'tool';
+                else if (msg instanceof SystemMessage) role = 'system';
                 
-                if (response.content) {
-                    await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                const formattedMsg = {
+                    role,
+                    content: (msg.content as string) || '',
+                    tool_calls: (msg as any).tool_calls,
+                    tool_call_id: (msg as any).tool_call_id,
+                    name: (msg as any).name,
+                    args: (msg as any).args
+                };
+                
+                dispatch({ type: 'ADD_MESSAGE', payload: formattedMsg });
+                saveMessage(sessionId, formattedMsg);
+                
+                if (role === 'assistant' && formattedMsg.content) {
+                    await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
                 }
+            }
 
-                // Automatic Titling after first response
-                if (iteration === 0 && state.messages.length === 0) {
-                    try {
-                        const titlePrompt = [
-                            { role: 'system' as const, content: 'You are a session titler. Generate a very short, 3-5 word title for this conversation based on the user\'s first message. Return ONLY the title, no quotes or punctuation.' },
-                            userMsg
-                        ];
-                        const titleResponse = await activeProvider.instance.chat(titlePrompt, [], controller.signal);
-                        if (titleResponse.content) {
-                            const newTitle = titleResponse.content.trim().slice(0, 50);
-                            updateSessionName(sessionId, newTitle);
-                            setSessionList(getSessions());
-                        }
-                    } catch (e) {
-                        // Ignore titling errors
+            // Automatic Titling after first response
+            if (state.messages.length === 0) {
+                try {
+                    const titlePrompt = [
+                        { role: 'system' as const, content: 'You are a session titler. Generate a very short, 3-5 word title for this conversation based on the user\'s first message. Return ONLY the title, no quotes or punctuation.' },
+                        userMsg
+                    ];
+                    const titleResponse = await activeProvider.instance.chat(titlePrompt, []);
+                    if (titleResponse.content) {
+                        const newTitle = titleResponse.content.trim().slice(0, 50);
+                        updateSessionName(sessionId, newTitle);
+                        setSessionList(getSessions());
                     }
+                } catch (e) {
+                    // Ignore titling errors
                 }
-                break; 
-            } catch (error: any) {
-                if (error?.name === 'AbortError') {
-                    break;
-                }
+            }
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                // Handled
+            } else {
                 const errorMsg = { role: 'system' as const, content: `Error: ${error?.message || String(error)}` };
                 dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
-                break;
             }
+        } finally {
+            dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+            abortControllerRef.current = null;
         }
-        dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
-        abortControllerRef.current = null;
     }, [activeProvider, state.messages, vectorMemory, tasks, dispatch, sessionId]);
 
     return (

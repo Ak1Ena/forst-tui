@@ -56,4 +56,8 @@ export class LocalLLMProvider extends BaseProvider {
             yield chunk.content as string;
         }
     }
+
+    getModel() {
+        return this.model;
+    }
 }

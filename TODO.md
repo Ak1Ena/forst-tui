@@ -85,3 +85,14 @@
 - [x] Create a "Settings" view in the TUI to edit configuration in real-time
 - [x] Migrate provider initialization to use `ConfigManager` instead of `.env`
 - [ ] Implement secure storage/encryption for API keys (optional refinement)
+
+## Phase 15: Agentic Workflow (LangGraph & LangSmith)
+- [x] Install `@langchain/langgraph` and `langsmith`
+- [x] Implement `getModel()` across providers to expose underlying LangChain models
+- [x] Define graph state and nodes in `src/core/Workflow.ts`
+- [x] Implement a tool-calling node and a router node using LangGraph
+- [x] Integrate LangGraph workflow into the main `index.tsx` chat loop
+- [x] Configure LangSmith environment variables for tracing and observability
+
+
+

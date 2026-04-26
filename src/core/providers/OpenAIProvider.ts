@@ -65,4 +65,8 @@ export class OpenAIProvider extends BaseProvider {
             yield chunk.content as string;
         }
     }
+
+    getModel() {
+        return this.model;
+    }
 }
