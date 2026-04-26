@@ -13,6 +13,6 @@ export abstract class BaseProvider {
         this.options = options;
     }
 
-    abstract chat(messages: Message[], tools?: any[]): Promise<Message>;
-    abstract streamChat(messages: Message[], tools?: any[]): AsyncGenerator<string, void, unknown>;
+    abstract chat(messages: Message[], tools?: any[], signal?: AbortSignal): Promise<Message>;
+    abstract streamChat(messages: Message[], tools?: any[], signal?: AbortSignal): AsyncGenerator<string, void, unknown>;
 }

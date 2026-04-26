@@ -16,8 +16,8 @@ import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
-import {SYSTEM_PROMPT} from './core/Prompts.js';
-
+import React, {useEffect, useState, useCallback, useRef} from 'react';
+...
 const App = () => {
     const {state, dispatch} = useAppContext();
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
@@ -25,6 +25,9 @@ const App = () => {
     const [view, setView] = useState<'chat' | 'settings'>('chat');
     const [sessionId, setSessionId] = useState<number>(0);
     const [sessionList, setSessionList] = useState<{id: number, name: string}[]>([]);
+    const [scrollOffset, setScrollOffset] = useState(0);
+    const abortControllerRef = useRef<AbortController | null>(null);
+
 
     // Initialize Provider from Config
     const [activeProvider, setActiveProvider] = useState<{instance: any, config: any, error: string | null}>(() => {
@@ -46,6 +49,15 @@ const App = () => {
     const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
     useInput((input, key) => {
+        if (key.escape && state.agentState !== 'idle') {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+            }
+            return;
+        }
+
         if (input === 's' && key.ctrl) {
             setView(prev => {
                 const nextView = prev === 'chat' ? 'settings' : 'chat';
@@ -75,8 +87,18 @@ const App = () => {
             if (input === 'l' && key.ctrl) {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
             }
+            if (key.upArrow) {
+                setScrollOffset(prev => Math.min(prev + 1, Math.max(0, state.messages.length - 2)));
+            }
+            if (key.downArrow) {
+                setScrollOffset(prev => Math.max(0, prev - 1));
+            }
         }
     });
+
+    useEffect(() => {
+        setScrollOffset(0);
+    }, [state.messages.length]);
 
     useEffect(() => {
         initSchema();
@@ -121,6 +143,9 @@ const App = () => {
             dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '⚠️ Provider not configured. Press Ctrl+S to set your API Key.' } });
             return;
         }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
 
         if (text.startsWith('/')) {
             const parts = text.slice(1).split(' ');
@@ -178,7 +203,7 @@ const App = () => {
             dispatch({ type: 'SET_AGENT_STATE', payload: iteration === 0 ? 'thinking' : 'acting' });
             
             try {
-                const response = await activeProvider.instance.chat(currentMessages, getTools());
+                const response = await activeProvider.instance.chat(currentMessages, getTools(), controller.signal);
                 dispatch({ type: 'ADD_MESSAGE', payload: response });
                 saveMessage(sessionId, response);
                 currentMessages.push(response);
@@ -210,6 +235,9 @@ const App = () => {
                 await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now(), sessionId });
                 break; 
             } catch (error: any) {
+                if (error.name === 'AbortError') {
+                    break;
+                }
                 const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
                 dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
@@ -217,6 +245,7 @@ const App = () => {
             }
         }
         dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+        abortControllerRef.current = null;
     }, [activeProvider, state.messages, vectorMemory, tasks, dispatch, sessionId]);
 
     return (
@@ -232,13 +261,26 @@ const App = () => {
                     />
                     
                     <Box flexGrow={1} flexDirection="row" marginTop={1}>
-                        <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="column">
-                            {activeProvider.error && (
-                                <Box padding={1} backgroundColor="red">
-                                    <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
-                                </Box>
-                            )}
-                            <ChatView messages={state.messages} height={process.stdout.rows - 10} />
+                        <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="row">
+                            <Box flexGrow={1} flexDirection="column">
+                                {activeProvider.error && (
+                                    <Box padding={1} backgroundColor="red">
+                                        <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
+                                    </Box>
+                                )}
+                                <ChatView 
+                                    messages={state.messages} 
+                                    height={process.stdout.rows - 12} 
+                                    scrollOffset={scrollOffset}
+                                />
+                            </Box>
+                            
+                            {/* Scrollbar */}
+                            <Box flexDirection="column" width={1} alignItems="center" paddingY={1}>
+                                <Text color="blue">▲</Text>
+                                <Box flexGrow={1} />
+                                <Text color={scrollOffset > 0 ? 'yellow' : 'blue'}>▼</Text>
+                            </Box>
                         </Box>
                         
                         <Sidebar systemStats={systemStats} tasks={tasks} sessions={sessionList} currentSessionId={sessionId} />

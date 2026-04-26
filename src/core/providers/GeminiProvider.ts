@@ -26,7 +26,7 @@ export class GeminiProvider extends BaseProvider {
         });
     }
 
-    async chat(messages: Message[], tools?: any[]): Promise<Message> {
+    async chat(messages: Message[], tools?: any[], signal?: AbortSignal): Promise<Message> {
         const langchainMessages = this.mapMessages(messages);
         let modelWithTools: any = this.model;
         if (tools && tools.length > 0) {
@@ -39,7 +39,7 @@ export class GeminiProvider extends BaseProvider {
             }
         }
         
-        const response = await modelWithTools.invoke(langchainMessages);
+        const response = await modelWithTools.invoke(langchainMessages, { signal });
         return {
             role: 'assistant',
             content: (response.content as string) || '',
@@ -47,9 +47,9 @@ export class GeminiProvider extends BaseProvider {
         };
     }
 
-    async *streamChat(messages: Message[], tools?: any[]): AsyncGenerator<string, void, unknown> {
+    async *streamChat(messages: Message[], tools?: any[], signal?: AbortSignal): AsyncGenerator<string, void, unknown> {
         const langchainMessages = this.mapMessages(messages);
-        const stream = await this.model.stream(langchainMessages);
+        const stream = await this.model.stream(langchainMessages, { signal });
         for await (const chunk of stream) {
             yield chunk.content as string;
         }
