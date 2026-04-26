@@ -18,13 +18,13 @@
 - [x] Implement OpenAI/OpenRouter support
 
 ## Phase 4: Tool System (Plugin Pattern)
-- [ ] Create tool registration and discovery logic
-- [ ] Implement system tools:
-    - [ ] `run_command`
-    - [ ] `read_files`
-- [ ] Implement web tools:
-    - [ ] `search` (e.g., Tavily or DuckDuckGo)
-- [ ] Implement integration architecture (e.g., skeleton for Discord)
+- [x] Create tool registration and discovery logic
+- [x] Implement system tools:
+    - [x] `run_command`
+    - [x] `read_files`
+- [x] Implement web tools:
+    - [x] `search` (e.g., Tavily or DuckDuckGo)
+- [x] Implement integration architecture (e.g., skeleton for Discord)
 
 ## Phase 5: Heartbeat & Background Tasks
 - [ ] Create the Heartbeat event loop
