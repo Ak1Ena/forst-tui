@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useState, useCallback} from 'react';
 import {render, Box, useInput, Text} from 'ink';
 import {initSchema} from './database/schema.js';
 import {AppProvider, useAppContext} from './core/AppContext.js';
@@ -15,6 +15,7 @@ import {saveMessage, getMessages} from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
+import {getTools} from './tools/index.js';
 
 const App = () => {
     const {state, dispatch} = useAppContext();
@@ -42,9 +43,7 @@ const App = () => {
     const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
 
     useInput((input, key) => {
-        if (input === 'l' && key.ctrl) {
-            dispatch({ type: 'SET_MESSAGES', payload: [] });
-        }
+        // Handle Ctrl+S toggle globally
         if (input === 's' && key.ctrl) {
             setView(prev => {
                 const nextView = prev === 'chat' ? 'settings' : 'chat';
@@ -57,7 +56,6 @@ const App = () => {
                                 config,
                                 error: null
                             });
-                            // Re-initialize Vector Memory with new key
                             const newVM = new VectorMemory(config.apiKey || '');
                             newVM.init();
                             setVectorMemory(newVM);
@@ -68,6 +66,14 @@ const App = () => {
                 }
                 return nextView;
             });
+            return;
+        }
+
+        // Only handle other global shortcuts if NOT in settings view
+        if (view === 'chat') {
+            if (input === 'l' && key.ctrl) {
+                dispatch({ type: 'SET_MESSAGES', payload: [] });
+            }
         }
     });
 
@@ -96,7 +102,7 @@ const App = () => {
         };
     }, [vectorMemory]);
 
-    const handleSendMessage = async (text: string) => {
+    const handleSendMessage = useCallback(async (text: string) => {
         if (!activeProvider.instance) {
             dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '⚠️ Provider not configured. Press Ctrl+S to set your API Key.' } });
             return;
@@ -119,26 +125,58 @@ const App = () => {
             }
         }
 
-        const userMsg = { role: 'user' as const, content: text };
+        let userMsg = { role: 'user' as const, content: text };
         dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
         saveMessage(userMsg);
         await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now() });
 
-        dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
-        
-        try {
-            const response = await activeProvider.instance.chat([...state.messages, userMsg]);
-            dispatch({ type: 'ADD_MESSAGE', payload: response });
-            saveMessage(response);
-            await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now() });
-        } catch (error: any) {
-            const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
-            dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
-            dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
-        } finally {
-            dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+        let currentMessages = [...state.messages, userMsg];
+        let iteration = 0;
+        const maxIterations = 5;
+
+        while (iteration < maxIterations) {
+            dispatch({ type: 'SET_AGENT_STATE', payload: iteration === 0 ? 'thinking' : 'acting' });
+            
+            try {
+                const response = await activeProvider.instance.chat(currentMessages, getTools());
+                dispatch({ type: 'ADD_MESSAGE', payload: response });
+                saveMessage(response);
+                currentMessages.push(response);
+
+                if (response.tool_calls && response.tool_calls.length > 0) {
+                    dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
+                    
+                    for (const toolCall of response.tool_calls) {
+                        const tool = getTools().find(t => t.name === toolCall.name);
+                        if (tool) {
+                            dispatch({ type: 'START_TOOL', payload: toolCall.name });
+                            const result = await tool.invoke(toolCall.args);
+                            const toolMsg = { 
+                                role: 'tool' as const, 
+                                content: typeof result === 'string' ? result : JSON.stringify(result),
+                                tool_call_id: toolCall.id,
+                                name: toolCall.name
+                            };
+                            dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
+                            dispatch({ type: 'STOP_TOOL', payload: toolCall.name });
+                            currentMessages.push(toolMsg);
+                        }
+                    }
+                    iteration++;
+                    continue; 
+                }
+                
+                await vectorMemory.addMessage(response.content, { role: 'assistant', timestamp: Date.now() });
+                break; 
+            } catch (error: any) {
+                const errorMsg = { role: 'system' as const, content: `Error: ${error.message}` };
+                dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
+                break;
+            }
         }
-    };
+        dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+    }, [activeProvider, state.messages, vectorMemory, tasks, dispatch]);
 
     return (
         <Box flexDirection="column" height="100%">

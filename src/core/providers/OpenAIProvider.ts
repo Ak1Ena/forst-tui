@@ -1,7 +1,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { BaseProvider, ProviderOptions } from "./BaseProvider.js";
 import { Message } from "../AppContext.js";
-import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
 
 export class OpenAIProvider extends BaseProvider {
     private model: ChatOpenAI;
@@ -9,11 +9,15 @@ export class OpenAIProvider extends BaseProvider {
     constructor(options: ProviderOptions) {
         super(options);
         this.model = new ChatOpenAI({
-            openAIApiKey: options.apiKey,
+            apiKey: options.apiKey,
+            modelName: options.model,
             configuration: {
-                baseURL: options.baseUrl, // Useful for OpenRouter
-            },
-            modelName: options.model || "gpt-4-turbo-preview",
+                baseURL: options.baseUrl,
+                defaultHeaders: {
+                    "HTTP-Referer": "https://github.com/Ak1Ena/forst-tui",
+                    "X-Title": "forst-tui",
+                }
+            }
         });
     }
 
@@ -21,8 +25,9 @@ export class OpenAIProvider extends BaseProvider {
         return messages.map(m => {
             switch (m.role) {
                 case 'user': return new HumanMessage(m.content);
-                case 'assistant': return new AIMessage(m.content);
+                case 'assistant': return new AIMessage({ content: m.content, tool_calls: m.tool_calls });
                 case 'system': return new SystemMessage(m.content);
+                case 'tool': return new ToolMessage({ content: m.content, tool_call_id: m.tool_call_id || '', name: m.name });
                 default: return new HumanMessage(m.content);
             }
         });
@@ -41,7 +46,8 @@ export class OpenAIProvider extends BaseProvider {
         const response = await modelWithTools.invoke(langchainMessages);
         return {
             role: 'assistant',
-            content: response.content as string,
+            content: (response.content as string) || '',
+            tool_calls: (response as any).tool_calls,
         };
     }
 

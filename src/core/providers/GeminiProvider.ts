@@ -1,7 +1,7 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { BaseProvider, ProviderOptions } from "./BaseProvider.js";
 import { Message } from "../AppContext.js";
-import { HumanMessage, AIMessage, SystemMessage, BaseMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, SystemMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
 
 export class GeminiProvider extends BaseProvider {
     private model: ChatGoogleGenerativeAI;
@@ -18,8 +18,9 @@ export class GeminiProvider extends BaseProvider {
         return messages.map(m => {
             switch (m.role) {
                 case 'user': return new HumanMessage(m.content);
-                case 'assistant': return new AIMessage(m.content);
+                case 'assistant': return new AIMessage({ content: m.content, tool_calls: m.tool_calls });
                 case 'system': return new SystemMessage(m.content);
+                case 'tool': return new ToolMessage({ content: m.content, tool_call_id: m.tool_call_id || '', name: m.name });
                 default: return new HumanMessage(m.content);
             }
         });
@@ -37,7 +38,8 @@ export class GeminiProvider extends BaseProvider {
         const response = await modelWithTools.invoke(langchainMessages);
         return {
             role: 'assistant',
-            content: response.content as string,
+            content: (response.content as string) || '',
+            tool_calls: (response as any).tool_calls,
         };
     }
 
