@@ -1,67 +1,73 @@
-# forst-tui
+# forst-tui 🌲
 
-A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
+A powerful, globally installable Node.js-based TUI wrapper for LLMs, built with **LangGraph**, **LangChain**, and **Ink**.
 
-## Features
+## 🚀 Installation
+
+Install globally to use `forst-tui` from any directory:
+
+```bash
+# From local directory
+npm install -g .
+
+# Or directly from GitHub
+npm install -g git+https://github.com/Ak1Ena/forst-tui.git
+```
+
+## ✨ Features
+
+### 🧠 Agentic Workflow (NEW)
+- **LangGraph Orchestration**: Uses a state-based graph for robust agentic behavior (Agent -> Tools -> Router loop).
+- **Observability**: Built-in **LangSmith** support for tracing thoughts and tool executions.
+- **Automatic Titling**: Conversations are automatically named by the model after the first interaction.
 
 ### 🤖 Multi-Provider LLM Support
-- **Provider Agnostic**: Supports Gemini, OpenAI, OpenRouter, and LocalLLMs (Ollama/LM Studio)
-- **Dynamic Configuration**: Add and switch providers in real-time via settings
+- **Provider Agnostic**: Supports Gemini, OpenAI, OpenRouter, and LocalLLMs (Ollama/LM Studio).
+- **Dynamic Configuration**: Add and switch providers in real-time via the Settings view (**Ctrl+S**).
 
-### 🛠️ Tool System (Plugin Pattern)
-- **System Tools**: Run shell commands, read/write files
-- **Web Tools**: Search the web (DuckDuckGo)
-- **Discord Integration**: Send messages to Discord channels
-- Easy-to-extend plugin architecture for adding new tools
+### 🛠️ Advanced Tool System
+- **System Tools**: Run shell commands, list files, and **write/edit code**.
+- **Vim Integration**: Use `/code <path>` to open files in `vim` directly from the chat.
+- **Web Tools**: Search the web via DuckDuckGo.
+- **Discord Integration**: Send messages to Discord channels.
 
-### 💾 Persistent Memory
-- **SQLite-backed** message history
-- **Vector Database** (hnswlib-node) for semantic memory retrieval
-- Auto-embedding of messages with semantic search capability
-
-### ⚡ Background Tasks
-- **Heartbeat System**: Monitor background events (user-controllable)
-- Sample monitors for system resources and file watching
+### 💾 Persistent Memory & Global Storage
+- **Global Settings**: Configuration, history, and memory are stored in **`~/.forst-tui/`**.
+- **SQLite History**: Fully persistent, searchable message history.
+- **Vector Memory**: Semantic retrieval using `hnswlib-node` for long-term project context.
 
 ### 🎨 Modern TUI Interface
-- **Two-Column Layout**: Chat on left, tools & system info on right
-- **Dynamic Sidebar**: System stats and active background tasks
-- **Header Dashboard**: Real-time status icons (LLM, DB, Network)
-- **Command Palette**: Quick actions via `/` (change provider, clear chat, toggle heartbeat)
-- **Keyboard Shortcuts**: e.g., `Ctrl+L` to clear chat
-- **Animated Spinners**: Visual feedback for "Thinking" and "Acting" states
-- **Syntax Highlighting**: Code blocks in chat
-- **Table Component**: Structured tool outputs
-- **Icons**: User 👤, AI 🤖, Tool 🛠️, System ⚙️
+- **Command Palette**: Access actions and tools via `/` suggestions.
+- **Session Manager**: Interactive list (**Ctrl+R**) to switch or delete (`d`) sessions.
+- **Two-Column Layout**: Real-time system stats (CPU/RAM) and background task monitors.
+- **Visual Polish**: Animated spinners, syntax highlighting, and custom iconography.
 
-## Setup
+## ⌨️ Shortcuts
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+| Key | Action |
+|-----|--------|
+| `Ctrl + S` | Toggle Settings / Change Provider |
+| `Ctrl + R` | Open Session Manager (Switch/Delete) |
+| `Ctrl + L` | Clear current chat display |
+| `Up/Down` | Scroll chat history |
+| `Esc` | Cancel active generation or Close Modals |
+| `/` | Open Command/Tool palette |
 
-2. **Configure Environment**:
-   Create a `.env` file or set your API keys:
-   ```bash
-   export GOOGLE_GENERATIVE_AI_API_KEY=your_key
-   ```
+## ⚙️ Configuration
 
-3. **Run in Development**:
-   ```bash
-   npm run dev
-   ```
+Settings are managed in-app via **Ctrl+S** and saved to `~/.forst-tui/settings.config.json`.
 
-4. **Build**:
-   ```bash
-   npm run build
-   ```
+To enable **LangSmith** tracing:
+```bash
+export LANGCHAIN_TRACING_V2=true
+export LANGCHAIN_API_KEY=your_langsmith_key
+```
 
-## Project Structure
-- `src/core`: Orchestration, providers, ConfigManager, and state management
-- `src/tools`: Tool definitions and registration
-- `src/components`: Ink TUI components
-- `src/database`: SQLite schema, history logic, and vector store
+## 📂 Project Structure
+- `src/core`: Workflow orchestration (LangGraph), Providers, and Config.
+- `src/tools`: Tool definitions (System, Web, Integrations).
+- `src/components`: Ink React components for the TUI.
+- `src/database`: SQLite schema and Vector Store management.
 
 ## License
 MIT
