@@ -12,26 +12,31 @@ import {Sidebar} from './components/Sidebar.js';
 import {GeminiProvider} from './core/providers/GeminiProvider.js';
 import {saveMessage, getMessages} from './database/messages.js';
 import {VectorMemory} from './database/vectorStore.js';
+import {configManager} from './core/ConfigManager.js';
+import {ProviderFactory} from './core/providers/ProviderFactory.js';
 
 const App = () => {
     const {state, dispatch} = useAppContext();
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
 
+    // Initialize Provider from Config
+    const [activeProvider] = useState(() => {
+        const config = configManager.getActiveProvider();
+        if (!config) throw new Error('No active provider found in config');
+        return {
+            instance: ProviderFactory.create(config),
+            config
+        };
+    });
+
     useInput((input, key) => {
         if (input === 'l' && key.ctrl) {
             dispatch({ type: 'SET_MESSAGES', payload: [] });
         }
     });
-    
-    // Initialize Provider (Mocking API key for now)
-    const apiKey = process.env['GOOGLE_GENERATIVE_AI_API_KEY'] || 'mock-key';
-    const provider = new GeminiProvider({
-        apiKey: apiKey,
-        model: 'gemini-pro'
-    });
 
-    const [vectorMemory] = useState(() => new VectorMemory(apiKey));
+    const [vectorMemory] = useState(() => new VectorMemory(activeProvider.config.apiKey || ''));
 
     useEffect(() => {
         initSchema();
@@ -87,7 +92,7 @@ const App = () => {
         
         try {
             // Simplified agent call
-            const response = await provider.chat([...state.messages, userMsg]);
+            const response = await activeProvider.instance.chat([...state.messages, userMsg]);
             
             dispatch({ type: 'ADD_MESSAGE', payload: response });
             saveMessage(response);
@@ -104,8 +109,8 @@ const App = () => {
     return (
         <Box flexDirection="column" height="100%">
             <StatusHeader 
-                provider="Gemini" 
-                model="gemini-pro" 
+                provider={activeProvider.config.name} 
+                model={activeProvider.config.model} 
                 agentState={state.agentState} 
             />
             

@@ -78,3 +78,10 @@
 - [x] Implement a **Command Palette** (accessible via `/`) for quick actions (change provider, clear chat, toggle heartbeat)
 - [ ] Create **Modal/Overlay** support for settings and detailed tool logs
 - [ ] Add **Sound/Notification support** (optional) for background task alerts
+
+## Phase 14: Dynamic Configuration System
+- [x] Implement `ConfigManager` in `src/core/ConfigManager.ts` to manage `settings.config.json`
+- [x] Support dynamic addition of LLM providers (name, apiKey, baseUrl, model)
+- [ ] Create a "Settings" view in the TUI to edit configuration in real-time
+- [x] Migrate provider initialization to use `ConfigManager` instead of `.env`
+- [ ] Implement secure storage/encryption for API keys (optional refinement)
