@@ -199,7 +199,7 @@ const App = () => {
                                     <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
                                 </Box>
                             )}
-                            <ChatView messages={state.messages} />
+                            <ChatView messages={state.messages} height={process.stdout.rows - 10} />
                         </Box>
                         
                         <Sidebar systemStats={systemStats} tasks={tasks} />

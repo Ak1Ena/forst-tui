@@ -70,7 +70,7 @@
 ## Phase 12: Rich Content Rendering
 - [ ] Implement **Markdown Parsing** for bold, italic, and list items in chat messages
 - [x] Create a **Table Component** for displaying structured tool outputs (e.g., file lists, process info)
-- [ ] Add **Scroll Indicators** and better viewport management for long conversations
+- [x] Add **Scroll Indicators** and better viewport management for long conversations
 - [ ] Implement **Breadcrumbs** for showing the current chain of thought/tool execution path
 
 ## Phase 13: Interactive Experience
