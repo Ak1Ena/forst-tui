@@ -70,13 +70,13 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 visibleGroups.map((group, index) => {
                     if (group.role === 'tool_group') {
                         return (
-                            <Box key={index} flexDirection="row" marginBottom={1}>
-                                <Text>🛠️ </Text>
-                                <Box flexDirection="row" flexWrap="wrap">
-                                    {group.tools.map((t: any, i: number) => (
-                                        <Text key={i} color="gray" italic>[{t.name || 'tool'}]</Text>
-                                    ))}
-                                </Box>
+                            <Box key={index} flexDirection="column" marginBottom={1}>
+                                {group.tools.map((t: any, i: number) => (
+                                    <Box key={i} flexDirection="row">
+                                        <Text color="gray" italic>🛠️ [{t.name || 'tool'}]</Text>
+                                        <Text color="dim"> {typeof t.args === 'string' ? t.args : JSON.stringify(t.args || '')}</Text>
+                                    </Box>
+                                ))}
                             </Box>
                         );
                     }

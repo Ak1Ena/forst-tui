@@ -7,6 +7,7 @@ export type Message = {
     tool_calls?: any[];
     tool_call_id?: string;
     name?: string;
+    args?: any;
 };
 
 export type AgentState = 'idle' | 'thinking' | 'acting' | 'error';

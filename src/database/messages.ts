@@ -26,8 +26,8 @@ export const getSessions = () => {
 
 export const saveMessage = (sessionId: number, message: Message, provider?: string, model?: string) => {
     const stmt = db.prepare(`
-        INSERT INTO messages (session_id, role, content, provider, model, tool_calls, tool_call_id, name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (session_id, role, content, provider, model, tool_calls, tool_call_id, name, args)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const info = stmt.run(
         sessionId,
@@ -37,14 +37,15 @@ export const saveMessage = (sessionId: number, message: Message, provider?: stri
         model || null,
         message.tool_calls ? JSON.stringify(message.tool_calls) : null,
         message.tool_call_id || null,
-        message.name || null
+        message.name || null,
+        message.args ? JSON.stringify(message.args) : null
     );
     return info.lastInsertRowid;
 };
 
 export const getMessages = (sessionId: number, limit: number = 100): Message[] => {
     const stmt = db.prepare(`
-        SELECT role, content, tool_calls, tool_call_id, name FROM messages 
+        SELECT role, content, tool_calls, tool_call_id, name, args FROM messages 
         WHERE session_id = ?
         ORDER BY id ASC LIMIT ?
     `);
@@ -54,6 +55,7 @@ export const getMessages = (sessionId: number, limit: number = 100): Message[] =
         content: row.content,
         tool_calls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
         tool_call_id: row.tool_call_id,
-        name: row.name
+        name: row.name,
+        args: row.args ? JSON.parse(row.args) : undefined
     }));
 };

@@ -43,7 +43,8 @@ export const initSchema = () => {
         { name: 'model', type: 'TEXT' },
         { name: 'tool_calls', type: 'TEXT' },
         { name: 'tool_call_id', type: 'TEXT' },
-        { name: 'name', type: 'TEXT' }
+        { name: 'name', type: 'TEXT' },
+        { name: 'args', type: 'TEXT' }
     ];
 
     for (const m of migrations) {

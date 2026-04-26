@@ -220,7 +220,8 @@ const App = () => {
                                 role: 'tool' as const, 
                                 content: typeof result === 'string' ? result : JSON.stringify(result),
                                 tool_call_id: toolCall.id,
-                                name: toolCall.name
+                                name: toolCall.name,
+                                args: toolCall.args
                             };
                             dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
                             saveMessage(sessionId, toolMsg);
