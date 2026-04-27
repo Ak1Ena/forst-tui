@@ -1,4 +1,4 @@
-import { FaissStore } from "@langchain/community/vectorstores/faiss";
+import { HNSWLib } from "@langchain/community/vectorstores/hnswlib";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Document } from "@langchain/core/documents";
 import path from "path";
@@ -8,7 +8,7 @@ import { GLOBAL_DIR } from "../core/ConfigManager.js";
 const VECTOR_STORE_PATH = path.join(GLOBAL_DIR, 'vector_store');
 
 export class VectorMemory {
-    private vectorStore: FaissStore | null = null;
+    private vectorStore: HNSWLib | null = null;
     private embeddings: GoogleGenerativeAIEmbeddings | null = null;
     private apiKey: string;
 
@@ -25,7 +25,7 @@ export class VectorMemory {
     async init() {
         if (!this.embeddings) return;
         if (fs.existsSync(VECTOR_STORE_PATH)) {
-            this.vectorStore = await FaissStore.load(VECTOR_STORE_PATH, this.embeddings);
+            this.vectorStore = await HNSWLib.load(VECTOR_STORE_PATH, this.embeddings);
         }
     }
 
@@ -34,7 +34,7 @@ export class VectorMemory {
         const doc = new Document({ pageContent: content, metadata });
         
         if (!this.vectorStore) {
-            this.vectorStore = await FaissStore.fromDocuments([doc], this.embeddings);
+            this.vectorStore = await HNSWLib.fromDocuments([doc], this.embeddings);
         } else {
             await this.vectorStore.addDocuments([doc]);
         }
