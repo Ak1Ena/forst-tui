@@ -9,6 +9,22 @@ interface Props {
     scrollOffset: number;
 }
 
+const ensureString = (content: any): string => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map(part => {
+            if (typeof part === 'string') return part;
+            if (part && typeof part === 'object') {
+                if ('text' in part) return part.text;
+                return JSON.stringify(part);
+            }
+            return '';
+        }).join('');
+    }
+    if (content && typeof content === 'object') return JSON.stringify(content);
+    return String(content || '');
+};
+
 export const ChatView = ({ messages, height, scrollOffset }: Props) => {
     const getIcon = (role: string) => {
         switch (role) {
@@ -48,10 +64,12 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 });
             }
 
+            const content = ensureString(msg.content);
+
             if (msg.role === 'tool') {
                 // Remove truncation for edit_file, and increase limit for others
                 const isEdit = msg.name === 'edit_file';
-                const result = isEdit ? msg.content : (msg.content.length > 500 ? msg.content.slice(0, 500) + '...' : msg.content);
+                const result = isEdit ? content : (content.length > 500 ? content.slice(0, 500) + '...' : content);
                 
                 lines.push({ 
                     text: `   🛠️ RESULT: [${msg.name}]`, 
@@ -62,9 +80,9 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                     // Keep empty lines for boxed layout
                     lines.push({ text: `     ${line}`, color: 'gray' });
                 });
-            } else if (msg.content) {
+            } else if (content) {
                 // Split content into lines and handle code blocks
-                const parts = msg.content.split('\n');
+                const parts = content.split('\n');
                 let inCodeBlock = false;
                 
                 parts.forEach(line => {

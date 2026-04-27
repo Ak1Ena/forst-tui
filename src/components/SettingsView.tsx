@@ -26,7 +26,7 @@ export const SettingsView = ({ onClose }: Props) => {
         'Coworker Planner': 'plannerMode'
     };
 
-    const providerTypes = ['gemini', 'openai', 'openrouter', 'ollama'];
+    const providerTypes = ['gemini', 'openai', 'anthropic', 'openrouter', 'ollama'];
     const interactionModes = ['approval', 'auto-accept', 'yolo'];
     const booleanOptions = ['enabled', 'disabled'];
     const [typeIndex, setTypeIndex] = useState(0);

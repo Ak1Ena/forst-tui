@@ -69,7 +69,7 @@ export const editFileTool = new DynamicStructuredTool({
             const to   = end_line ?? from; // 1-based end, inclusive
 
             // Validate range
-            if (operation !== 'insert' && (from < 1 || to < from || from > total)) {
+            if (operation !== 'insert' && (from < 1 || to < from || from > total || to > total)) {
                 return `Error: Line range ${from}-${to} is out of bounds (file has ${total} lines).`;
             }
             if (operation === 'insert' && from > total) {
@@ -113,12 +113,18 @@ export const editFileTool = new DynamicStructuredTool({
 
             // Build a context window around the edit for confirmation
             const changedStart = Math.max(0, from - 1);
-            const changedEnd   = operation === 'insert'
-                ? changedStart + newContent.length
-                : changedStart + newContent.length;
+            let changedEnd: number;
+
+            if (operation === 'insert') {
+                changedEnd = changedStart + newContent.length;
+            } else if (operation === 'replace') {
+                changedEnd = changedStart + newContent.length;
+            } else { // delete
+                changedEnd = changedStart; // Show lines around the deletion point
+            }
             
             const previewStart = Math.max(0, changedStart - 2);
-            const previewEnd   = Math.min(result.length, changedEnd + 3);
+            const previewEnd   = Math.min(result.length, Math.max(changedEnd + 3, previewStart + 1));
 
             const opDesc =
                 operation === 'insert'  ? `inserted ${newContent.length} line(s) after line ${from}` :
@@ -128,7 +134,8 @@ export const editFileTool = new DynamicStructuredTool({
             // Build a boxed context window
             const previewLines = result.slice(previewStart, previewEnd);
             const maxLineNumWidth = String(previewEnd).length;
-            const maxWidth = Math.min(80, Math.max(...previewLines.map(l => l.length + maxLineNumWidth + 5)));
+            const contentWidths = previewLines.map(l => l.length + maxLineNumWidth + 5);
+            const maxWidth = Math.min(100, Math.max(40, ...contentWidths));
             
             const boxTop    = `┌${'─'.repeat(maxWidth + 2)}┐`;
             const boxBottom = `└${'─'.repeat(maxWidth + 2)}┘`;
@@ -136,13 +143,21 @@ export const editFileTool = new DynamicStructuredTool({
             const formattedPreview = previewLines.map((l, i) => {
                 const curLine = previewStart + i + 1;
                 let marker = ' ';
-                if (operation === 'insert' && curLine > from && curLine <= from + newContent.length) marker = '+';
-                else if (operation === 'replace' && curLine >= from && curLine < from + newContent.length) marker = '+';
-                else if (operation === 'delete' && curLine === from) marker = '-'; // Note: delete preview shows state AFTER delete
+                if (operation === 'insert' && curLine > from && curLine <= from + newContent.length) {
+                    marker = '+';
+                } else if (operation === 'replace' && curLine >= from && curLine < from + newContent.length) {
+                    marker = '+';
+                } else if (operation === 'delete' && curLine === from) {
+                    marker = '-';
+                }
 
                 const lineNumStr = String(curLine).padStart(maxLineNumWidth, ' ');
                 const content = `${marker} ${lineNumStr} │ ${l}`;
-                return `│ ${content.padEnd(maxWidth).slice(0, maxWidth)} │`;
+                // Use a helper to pad or truncate correctly
+                const paddedContent = content.length > maxWidth 
+                    ? content.slice(0, maxWidth - 3) + '...' 
+                    : content.padEnd(maxWidth);
+                return `│ ${paddedContent} │`;
             }).join('\n');
 
             return [

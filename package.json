@@ -1,6 +1,6 @@
 {
   "name": "forst-tui",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A powerful Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.",
   "main": "dist/index.js",
   "bin": {
@@ -47,6 +47,7 @@
   },
   "homepage": "https://github.com/Ak1Ena/forst-tui#readme",
   "dependencies": {
+    "@langchain/anthropic": "^1.3.27",
     "@langchain/community": "^1.1.27",
     "@langchain/core": "^1.1.41",
     "@langchain/google-genai": "^2.1.28",

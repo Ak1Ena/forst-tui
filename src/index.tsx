@@ -121,6 +121,22 @@ const hydrateCheckpointer = async (
     }
 };
 
+const ensureString = (content: any): string => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content.map(part => {
+            if (typeof part === 'string') return part;
+            if (part && typeof part === 'object') {
+                if ('text' in part) return part.text;
+                return JSON.stringify(part);
+            }
+            return '';
+        }).join('');
+    }
+    if (content && typeof content === 'object') return JSON.stringify(content);
+    return String(content || '');
+};
+
 const App = () => {
     const {state, dispatch} = useAppContext();
     const {stdout} = useStdout();
@@ -173,13 +189,14 @@ const App = () => {
                 count += msg.tool_calls.length;
             }
 
+            const content = ensureString(msg.content);
             if (msg.role === 'tool') {
                 count += 1; // 🛠️ RESULT header
                 const isEdit = msg.name === 'edit_file';
-                const result = isEdit ? msg.content : (msg.content.length > 500 ? msg.content.slice(0, 500) + '...' : msg.content);
+                const result = isEdit ? content : (content.length > 500 ? content.slice(0, 500) + '...' : content);
                 count += result.split('\n').length;
-            } else if (msg.content) {
-                count += msg.content.split('\n').length;
+            } else if (content) {
+                count += content.split('\n').length;
             }
             count += 1; // Spacing
         });
@@ -350,9 +367,10 @@ const App = () => {
                         else if (msg instanceof SystemMessage) role = 'system';
                         else if (msg instanceof AIMessage) role = 'assistant';
                         
+                        const content = ensureString(msg.content);
                         const formattedMsg = {
                             role,
-                            content: (msg.content as string) || '',
+                            content: content,
                             tool_calls: (msg as any).tool_calls,
                             tool_call_id: (msg as any).tool_call_id,
                             name: (msg as any).name,
