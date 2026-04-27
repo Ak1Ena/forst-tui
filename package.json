@@ -1,6 +1,6 @@
 {
   "name": "forst-tui",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A powerful Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.",
   "main": "dist/index.js",
   "bin": {
@@ -21,7 +21,7 @@
     "prepack": "npm run build",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "rebuild": "npm rebuild better-sqlite3 hnswlib-node"
+    "rebuild": "npm rebuild better-sqlite3 faiss-node"
   },
   "repository": {
     "type": "git",
@@ -55,11 +55,12 @@
     "@langchain/openai": "^1.4.4",
     "better-sqlite3": "^12.9.0",
     "duck-duck-scrape": "^2.2.7",
-    "hnswlib-node": "^3.0.0",
+    "faiss-node": "^0.5.1",
     "ink": "^7.0.1",
     "ink-text-input": "^6.0.0",
     "langchain": "^1.3.4",
     "langsmith": "^0.5.25",
+    "pickleparser": "^0.2.1",
     "react": "^19.2.5",
     "systeminformation": "^5.31.5",
     "zod": "^3.25.0"

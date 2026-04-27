@@ -6,7 +6,7 @@ A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.
 - **Ink**: React-style TUI for managing complex state and UI rendering in the terminal.
 - **TypeScript**: Ensures type safety across providers and tool interfaces.
 - **Better-SQLite3**: For structured data (settings, message logs).
-- **HNSWLib**: Local vector database for semantic memory and RAG (Retrieval-Augmented Generation).
+- **FAISS**: Local vector database for semantic memory and RAG (Retrieval-Augmented Generation).
 
 ## Project Structure
 ```text
