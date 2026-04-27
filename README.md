@@ -16,6 +16,16 @@ npm install -g .
 npm install -g git+https://github.com/Ak1Ena/forst-tui.git
 ```
 
+### ⚠️ Troubleshooting: Permission Errors
+If you see an `EACCES` or "permission denied" error during global installation:
+
+1. **Recommended:** Use [nvm](https://github.com/nvm-sh/nvm) to manage Node.js versions. It allows global installs without root privileges.
+2. **Alternative:** Use `sudo` if you are using the system-installed Node:
+   ```bash
+   sudo npm install -g forst-tui
+   ```
+3. **npm prefix:** Alternatively, [configure npm to use a different directory](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally).
+
 ## ✨ Features
 
 ### 🧠 Agentic Workflow (NEW)
