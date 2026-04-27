@@ -1,45 +1,54 @@
 # forst-tui 🌲
 
 [![npm version](https://img.shields.io/npm/v/forst-tui.svg)](https://www.npmjs.com/package/forst-tui)
+[![Node.js >=22](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 A powerful, globally installable Node.js-based TUI wrapper for LLMs, built with **LangGraph**, **LangChain**, and **Ink**.
 
+---
+
 ## 🚀 Installation
 
-Install globally to use `forst-tui` from any directory:
+> **Requires Node.js >= 22.0.0** — use [nvm](https://github.com/nvm-sh/nvm) to manage versions.
 
 ```bash
-# From local directory
+# Install from npm (recommended)
+npm install -g forst-tui
+
+# Install from local directory
 npm install -g .
 
-# Or directly from GitHub
+# Install directly from GitHub
 npm install -g git+https://github.com/Ak1Ena/forst-tui.git
 ```
 
 ### ⚠️ Troubleshooting: Permission Errors
 If you see an `EACCES` or "permission denied" error during global installation:
 
-1. **Recommended:** Use [nvm](https://github.com/nvm-sh/nvm) to manage Node.js versions. It allows global installs without root privileges.
-2. **Alternative:** Use `sudo` if you are using the system-installed Node:
+1. **Recommended:** Use [nvm](https://github.com/nvm-sh/nvm) — allows global installs without root privileges.
+2. **Alternative:** Use `sudo` with a system-installed Node:
    ```bash
    sudo npm install -g forst-tui
    ```
-3. **npm prefix:** Alternatively, [configure npm to use a different directory](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally).
+3. **npm prefix:** [Configure npm to use a different directory](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally).
+
+---
 
 ## ✨ Features
 
 ### 🧠 Agentic Workflow
-- **LangGraph Orchestration**: Uses a state-based graph for robust agentic behavior (Agent → Tools → Router loop).
+- **LangGraph Orchestration**: State-based graph for robust agentic behavior (Agent → Tools → Router loop).
 - **Observability**: Built-in **LangSmith** support for tracing thoughts and tool executions.
 - **Automatic Titling**: Conversations are automatically named by the model after the first interaction.
 
 ### 🤖 Multi-Provider LLM Support
-- **Provider Agnostic**: Supports Gemini, OpenAI, OpenRouter, and LocalLLMs (Ollama/LM Studio).
+- **Provider Agnostic**: Supports **Gemini**, **OpenAI**, **Anthropic (Claude)**, **OpenRouter**, and **LocalLLMs** (Ollama / LM Studio).
 - **Dynamic Configuration**: Add and switch providers in real-time via the Settings view (**Ctrl+S**).
 
 ### 🛠️ Advanced Tool System
-- **System Tools**: Run shell commands, list files, read files, and **write/edit code**.
-- **File Writing**: The `write_file` tool can create or overwrite files, auto-creates missing directories, and returns a preview of the written content.
+- **System Tools**: Run shell commands, list files, read files, and write/edit code.
+- **File Editing**: The `edit_file` tool can create, insert, replace, or delete lines in files — auto-creates missing directories and returns a preview of changes.
 - **Vim Integration**: Use `/code <path>` to open files in `vim` directly from the chat.
 - **Web Tools**: Search the web via DuckDuckGo.
 - **Discord Integration**: Send messages to Discord channels.
@@ -47,11 +56,11 @@ If you see an `EACCES` or "permission denied" error during global installation:
 ### 🧩 Skill Manager
 - **Persistent Skills**: Teach the AI specialized instructions or domain knowledge that persist across all sessions.
 - **Markdown-based**: Skills are stored as `.md` files in `~/.forst-tui/skills/`.
-- **Tool-driven**: The AI can `list`, `read`, `add`, and `delete` skills autonomously using the `manage_skills` tool.
+- **Tool-driven**: The AI can `list`, `read`, `add`, and `delete` skills autonomously via the `manage_skills` tool.
 - **Auto-injected**: All installed skills are automatically included in the system prompt at startup.
 
   ```
-  # Example: telling the AI to add a skill
+  # Example: telling the AI to save a skill
   "Remember that I always want TypeScript strict mode in my projects."
   ```
 
@@ -77,17 +86,23 @@ If you see an `EACCES` or "permission denied" error during global installation:
 - **Session Manager**: Interactive list (**Ctrl+R**) to switch or delete (`d`) sessions.
 - **Two-Column Layout**: Real-time system stats (CPU/RAM) and background task monitors.
 - **Visual Polish**: Animated spinners, syntax highlighting, and custom iconography.
+- **Code Blocks**: Dedicated syntax-highlighted code rendering in the chat view.
+
+---
 
 ## ⌨️ Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `Ctrl + S` | Toggle Settings / Change Provider |
-| `Ctrl + R` | Open Session Manager (Switch/Delete) |
+| `Ctrl + R` | Open Session Manager (Switch / Delete) |
 | `Ctrl + L` | Clear current chat display |
-| `Up/Down` | Scroll chat history |
-| `Esc` | Cancel active generation or Close Modals |
-| `/` | Open Command/Tool palette |
+| `Up / Down` | Scroll chat history |
+| `Esc` | Cancel active generation or close modals |
+| `/` | Open Command / Tool palette |
+| `d` | Delete session (while in Session Manager) |
+
+---
 
 ## ⚙️ Configuration
 
@@ -98,6 +113,8 @@ To enable **LangSmith** tracing:
 export LANGCHAIN_TRACING_V2=true
 export LANGCHAIN_API_KEY=your_langsmith_key
 ```
+
+---
 
 ## 📂 Project Structure
 
@@ -111,10 +128,57 @@ export LANGCHAIN_API_KEY=your_langsmith_key
 ```
 
 **Source layout:**
-- `src/core`: Workflow orchestration (LangGraph), Providers, Config, and SkillManager.
-- `src/tools`: Tool definitions (System, Web, Integrations).
-- `src/components`: Ink React components for the TUI.
-- `src/database`: SQLite schema, Core Memory, and Vector Store management.
+```
+src/
+├── index.tsx                     # Entry point
+├── core/
+│   ├── Workflow.ts               # LangGraph agent orchestration
+│   ├── Agent.ts                  # Agent logic
+│   ├── Prompts.ts                # System prompt construction
+│   ├── ConfigManager.ts          # Provider & app configuration
+│   ├── SkillManager.ts           # Skill loading and management
+│   ├── ToolRetriever.ts          # Dynamic tool registration
+│   ├── Heartbeat.ts              # Background task event loop
+│   ├── AppContext.tsx            # Global React context / state
+│   ├── monitors/                 # Background monitor implementations
+│   └── providers/                # LLM provider adapters
+├── tools/
+│   ├── system/                   # Shell, file read/write tools
+│   ├── web/                      # DuckDuckGo search tool
+│   └── integrations/             # Discord and other integrations
+├── components/
+│   ├── ChatView.tsx              # Scrollable message list
+│   ├── InputBar.tsx              # Multi-line text input
+│   ├── ToolStatus.tsx            # Tool execution visual feedback
+│   ├── CodeBlock.tsx             # Syntax-highlighted code rendering
+│   ├── Sidebar.tsx               # System stats & background tasks
+│   ├── StatusHeader.tsx          # Real-time status dashboard
+│   ├── SettingsView.tsx          # In-app settings editor
+│   ├── SessionListView.tsx       # Session switch/delete UI
+│   ├── Table.tsx                 # Structured data table component
+│   └── AnimatedSpinner.tsx       # Thinking/acting spinner
+└── database/                     # SQLite schema, CoreMemory & VectorStore
+```
+
+---
+
+## 🛠️ Development
+
+```bash
+# Run in dev mode (no build step)
+npm run dev
+
+# Build TypeScript
+npm run build
+
+# Run tests
+npm test
+
+# Rebuild native modules (after Node version change)
+npm run rebuild
+```
+
+---
 
 ## License
-MIT
+MIT — [Aki](https://github.com/Ak1Ena)
