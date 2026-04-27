@@ -1,8 +1,15 @@
 import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
-import { BaseMessage } from "@langchain/core/messages";
+import { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { getTools } from "../tools/index.js";
 import { BaseProvider } from "./providers/BaseProvider.js";
+
+export type TaskStatus = 'pending' | 'in-progress' | 'completed' | 'failed';
+export type Task = {
+    id: string;
+    description: string;
+    status: TaskStatus;
+};
 
 // Define the state interface
 export const AgentState = Annotation.Root({
@@ -10,9 +17,13 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => x.concat(y),
     default: () => [],
   }),
+  taskQueue: Annotation<Task[]>({
+    reducer: (x, y) => y ?? x, // Overwrite with new queue if provided
+    default: () => [],
+  }),
 });
 
-export const createAgentWorkflow = (provider: BaseProvider) => {
+export const createAgentWorkflow = (provider: BaseProvider, checkpointer?: any, interrupt?: boolean) => {
   const tools = getTools();
   const model = provider.getModel();
   
@@ -33,33 +44,36 @@ export const createAgentWorkflow = (provider: BaseProvider) => {
 
   // Define the function that calls the model
   const callModel = async (state: typeof AgentState.State) => {
-    const { messages } = state;
-    const response = await modelWithTools.invoke(messages);
-    // We return a list, because this will get added to the existing list
+    const { messages, taskQueue } = state;
+    
+    // Inject task context into the system prompt or as a message if queue exists
+    let activeMessages = [...messages];
+    if (taskQueue.length > 0) {
+        const pendingTasks = taskQueue.filter(t => t.status === 'pending' || t.status === 'in-progress');
+        if (pendingTasks.length > 0) {
+            const context = `[TASK QUEUE]\n${pendingTasks.map(t => `- ${t.description} [${t.status}]`).join('\n')}\n\nPlease focus on the next pending task. Update task status by mentioning "COMPLETED: <task_id>" in your response if you finish one.`;
+            // Find system message to append or add new one
+            activeMessages.push(new SystemMessage(context));
+        }
+    }
+
+    const response = await modelWithTools.invoke(activeMessages);
     return { messages: [response] };
   };
 
   // Define a new graph
   const workflow = new StateGraph(AgentState)
-    // Define the two nodes we will cycle between
     .addNode("agent", callModel)
     .addNode("tools", new ToolNode(tools))
-    // Set the entrypoint as `agent`
     .addEdge(START, "agent")
-    // We now add a conditional edge
     .addConditionalEdges(
-      // First, we define the start node. We use `agent`.
-      // This means these are the edges taken after the `agent` node is called.
       "agent",
-      // Next, we pass in the function that will determine which node is called next.
       shouldContinue
     )
-    // We now add a normal edge from `tools` to `agent`.
-    // This means after `tools` is called, `agent` node is called next.
     .addEdge("tools", "agent");
 
-  // Finally, we compile it!
-  // This compiles it into a LangChain Runnable,
-  // meaning you can use it as you would any other runnable
-  return workflow.compile();
+  return workflow.compile({
+    checkpointer,
+    interruptBefore: interrupt ? ["tools"] : undefined
+  });
 };

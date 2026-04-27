@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
-import {render, Box, useInput, Text} from 'ink';
+import {render, Box, useInput, Text, useStdout} from 'ink';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import {initSchema} from './database/schema.js';
-import {AppProvider, useAppContext} from './core/AppContext.js';
+import {AppProvider, useAppContext, Task} from './core/AppContext.js';
 import {heartbeat} from './core/Heartbeat.js';
 import {systemMonitorTask} from './core/monitors/SystemMonitor.js';
 import {ChatView} from './components/ChatView.js';
@@ -23,10 +23,15 @@ import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
 import {HumanMessage, AIMessage, SystemMessage, ToolMessage} from '@langchain/core/messages';
+import { MemorySaver } from "@langchain/langgraph";
 import { Client } from "langsmith";
+
+const checkpointer = new MemorySaver();
 
 const App = () => {
     const {state, dispatch} = useAppContext();
+    const {stdout} = useStdout();
+    const [terminalSize, setTerminalSize] = useState({columns: stdout.columns || 80, rows: stdout.rows || 24});
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
     const [view, setView] = useState<'chat' | 'settings' | 'sessions'>('chat');
@@ -34,6 +39,16 @@ const App = () => {
     const [sessionList, setSessionList] = useState<{id: number, name: string, created_at: string}[]>([]);
     const [scrollOffset, setScrollOffset] = useState(0);
     const abortControllerRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        const onResize = () => {
+            setTerminalSize({columns: stdout.columns, rows: stdout.rows});
+        };
+        stdout.on('resize', onResize);
+        return () => {
+            stdout.off('resize', onResize);
+        };
+    }, [stdout]);
 
 
     // Initialize Provider from Config
@@ -113,6 +128,35 @@ const App = () => {
             return;
         }
 
+        if (key.tab && key.shift) {
+            const modes: ('approval' | 'auto-accept' | 'yolo')[] = ['approval', 'auto-accept', 'yolo'];
+            const currentIndex = modes.indexOf(state.interactionMode);
+            const nextMode = modes[(currentIndex + 1) % modes.length];
+            dispatch({ type: 'SET_INTERACTION_MODE', payload: nextMode });
+            return;
+        }
+
+        if (state.agentState === 'awaiting_approval') {
+            if (input === 'y') {
+                handleApprove();
+                return;
+            }
+            if (input === 'n') {
+                handleDeny();
+                return;
+            }
+        }
+
+        if (input === 'x' && key.ctrl) {
+            dispatch({ type: 'CLEAR_QUEUE' });
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Execution stopped and queue cleared.' } });
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+            }
+            return;
+        }
+
         if (view === 'chat') {
             if (input === 'l' && key.ctrl) {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
@@ -168,6 +212,108 @@ const App = () => {
         };
     }, [vectorMemory]);
 
+    const processStream = useCallback(async (stream: any, sessionId: number) => {
+        try {
+            // If in planner mode and we have pending tasks, mark the first one as in-progress
+            if (configManager.getSettings().plannerMode && state.taskQueue.length > 0) {
+                const firstPending = state.taskQueue.find(t => t.status === 'pending');
+                if (firstPending && !state.taskQueue.some(t => t.status === 'in-progress')) {
+                    dispatch({ type: 'UPDATE_TASK', payload: { id: firstPending.id, status: 'in-progress' } });
+                }
+            }
+
+            for await (const chunk of stream) {
+                const nodeName = Object.keys(chunk)[0];
+                const output = (chunk as any)[nodeName];
+
+                if (output && output.messages) {
+                    const newMsgs = output.messages;
+                    for (const msg of newMsgs) {
+                        let role: 'assistant' | 'tool' | 'system' = 'assistant';
+                        if (msg instanceof ToolMessage) role = 'tool';
+                        else if (msg instanceof SystemMessage) role = 'system';
+                        else if (msg instanceof AIMessage) role = 'assistant';
+                        
+                        const formattedMsg = {
+                            role,
+                            content: (msg.content as string) || '',
+                            tool_calls: (msg as any).tool_calls,
+                            tool_call_id: (msg as any).tool_call_id,
+                            name: (msg as any).name,
+                            args: (msg as any).args
+                        };
+                        
+                        dispatch({ type: 'ADD_MESSAGE', payload: formattedMsg });
+                        saveMessage(sessionId, formattedMsg);
+                        
+                        if (role === 'tool') {
+                            dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
+                        } else {
+                            dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
+                        }
+
+                        if (role === 'assistant' && formattedMsg.content) {
+                            await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                            
+                            // Task Parsing logic
+                            if (formattedMsg.content.includes('PLAN:')) {
+                                try {
+                                    const jsonStr = formattedMsg.content.split('PLAN:')[1].trim();
+                                    const tasks = JSON.parse(jsonStr.split('\n')[0]); // Take first line of JSON
+                                    if (Array.isArray(tasks)) {
+                                        const formattedTasks = tasks.map((t: any) => ({
+                                            id: t.id || Math.random().toString(36).slice(2, 9),
+                                            description: t.description || String(t),
+                                            status: 'pending' as const
+                                        }));
+                                        dispatch({ type: 'SET_QUEUE', payload: formattedTasks });
+                                    }
+                                } catch (e) { /* ignore parse errors */ }
+                            }
+
+                            if (formattedMsg.content.includes('COMPLETED:')) {
+                                const match = formattedMsg.content.match(/COMPLETED:\s*(\w+)/);
+                                if (match && match[1]) {
+                                    dispatch({ type: 'UPDATE_TASK', payload: { id: match[1], status: 'completed' } });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+            const config = { configurable: { thread_id: sessionId.toString() } };
+            
+            // Sync current task queue into graph state before checking
+            await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
+            
+            const graphState = await appWorkflow.getState(config);
+
+            if (graphState.next.length > 0 && state.interactionMode === 'approval') {
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'awaiting_approval' });
+                const lastMsg = graphState.values.messages[graphState.values.messages.length - 1];
+                if (lastMsg && (lastMsg as any).tool_calls) {
+                    dispatch({ type: 'SET_PENDING_TOOL', payload: (lastMsg as any).tool_calls });
+                }
+            } else {
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
+            }
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                // Handled
+            } else {
+                let errorMessage = error?.message || String(error);
+                if (error?.error?.message) errorMessage = `${errorMessage} - ${error.error.message}`;
+                const errorMsg = { role: 'system' as const, content: `Error: ${errorMessage}` };
+                dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
+                dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
+            }
+        } finally {
+            abortControllerRef.current = null;
+        }
+    }, [activeProvider, state.interactionMode, vectorMemory, dispatch]);
+
     const handleSendMessage = useCallback(async (text: string) => {
         if (!activeProvider.instance) {
             dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '⚠️ Provider not configured. Press Ctrl+S to set your API Key.' } });
@@ -189,10 +335,7 @@ const App = () => {
                 }
                 
                 try {
-                    // Open vim
                     spawnSync('vim', [filePath], { stdio: 'inherit' });
-                    
-                    // After vim exits, show the code
                     if (fs.existsSync(filePath)) {
                         const content = fs.readFileSync(filePath, 'utf8');
                         const preview = `Edited ${filePath}:\n\`\`\`\n${content}\n\`\`\``;
@@ -248,6 +391,18 @@ const App = () => {
                 }
             }
 
+            if (command === 'task') {
+                const desc = parts.slice(1).join(' ');
+                if (!desc) {
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Usage: /task <description>' } });
+                    return;
+                }
+                const newTask: Task = { id: Math.random().toString(36).slice(2, 9), description: desc, status: 'pending' };
+                dispatch({ type: 'ADD_TASK', payload: newTask });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Added task: ${desc}` } });
+                return;
+            }
+
             if (command === 'clear') {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
                 return;
@@ -263,11 +418,14 @@ const App = () => {
         saveMessage(sessionId, userMsg);
         await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
-        const appWorkflow = createAgentWorkflow(activeProvider.instance);
+        const appWorkflow = createAgentWorkflow(
+            activeProvider.instance, 
+            checkpointer, 
+            state.interactionMode === 'approval'
+        );
         
-        // Map messages to LangChain format
         const langchainMessages = [
-            new SystemMessage(getSystemPrompt()),
+            new SystemMessage(getSystemPrompt(configManager.getSettings().plannerMode)),
             ...state.messages.map(m => {
                 if (m.role === 'user') return new HumanMessage(m.content);
                 if (m.role === 'assistant') return new AIMessage({ content: m.content, tool_calls: m.tool_calls });
@@ -280,95 +438,56 @@ const App = () => {
 
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
 
-        try {
-            const config = {
-                configurable: { thread_id: sessionId.toString() },
-                recursionLimit: configManager.getSettings().recursionLimit || 50
-            };
+        const config = {
+            configurable: { thread_id: sessionId.toString() },
+            recursionLimit: configManager.getSettings().recursionLimit || 50
+        };
 
-            const stream = await appWorkflow.stream(
-                { messages: langchainMessages },
-                config
-            );
+        const stream = await appWorkflow.stream({ messages: langchainMessages }, config);
+        await processStream(stream, sessionId);
+    }, [activeProvider, state.messages, state.interactionMode, vectorMemory, tasks, dispatch, sessionId, processStream]);
 
-            for await (const chunk of stream) {
-                const nodeName = Object.keys(chunk)[0];
-                const output = (chunk as any)[nodeName];
+    const handleApprove = useCallback(async () => {
+        if (state.agentState !== 'awaiting_approval') return;
+        dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
+        dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
-                if (output && output.messages) {
-                    const newMsgs = output.messages;
-                    for (const msg of newMsgs) {
-                        let role: 'assistant' | 'tool' | 'system' = 'assistant';
-                        if (msg instanceof ToolMessage) role = 'tool';
-                        else if (msg instanceof SystemMessage) role = 'system';
-                        else if (msg instanceof AIMessage) role = 'assistant';
-                        
-                        const formattedMsg = {
-                            role,
-                            content: (msg.content as string) || '',
-                            tool_calls: (msg as any).tool_calls,
-                            tool_call_id: (msg as any).tool_call_id,
-                            name: (msg as any).name,
-                            args: (msg as any).args
-                        };
-                        
-                        dispatch({ type: 'ADD_MESSAGE', payload: formattedMsg });
-                        saveMessage(sessionId, formattedMsg);
-                        
-                        if (role === 'tool') {
-                            dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
-                        } else {
-                            dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
-                        }
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+        const config = {
+            configurable: { thread_id: sessionId.toString() },
+            recursionLimit: configManager.getSettings().recursionLimit || 50
+        };
 
-                        if (role === 'assistant' && formattedMsg.content) {
-                            await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
-                        }
-                    }
-                }
-            }
+        const stream = await appWorkflow.stream(null, config);
+        await processStream(stream, sessionId);
+    }, [state.agentState, state.interactionMode, activeProvider, sessionId, processStream]);
 
-            // Automatic Titling after first response
-            if (state.messages.length === 0) {
-                try {
-                    const titlePrompt = [
-                        { role: 'system' as const, content: 'You are a session titler. Generate a very short, 3-5 word title for this conversation based on the user\'s first message. Return ONLY the title, no quotes or punctuation.' },
-                        userMsg
-                    ];
-                    const titleResponse = await activeProvider.instance.chat(titlePrompt, []);
-                    if (titleResponse.content) {
-                        const newTitle = titleResponse.content.trim().slice(0, 50);
-                        updateSessionName(sessionId, newTitle);
-                        setSessionList(getSessions());
-                    }
-                } catch (e) {
-                    // Ignore titling errors
-                }
-            }
-        } catch (error: any) {
-            if (error?.name === 'AbortError') {
-                // Handled
-            } else {
-                let errorMessage = error?.message || String(error);
-                
-                // Try to extract more info from common SDK error structures
-                if (error?.error?.message) {
-                    errorMessage = `${errorMessage} - ${error.error.message}`;
-                } else if (error?.response?.data?.error?.message) {
-                    errorMessage = `${errorMessage} - ${error.response.data.error.message}`;
-                } else if (error?.cause) {
-                    errorMessage = `${errorMessage} (Cause: ${error.cause?.message || String(error.cause)})`;
-                }
+    const handleDeny = useCallback(async () => {
+        if (state.agentState !== 'awaiting_approval' || !state.pendingToolCall) return;
+        
+        dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
+        
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+        const config = {
+            configurable: { thread_id: sessionId.toString() },
+            recursionLimit: configManager.getSettings().recursionLimit || 50
+        };
 
-                const errorMsg = { role: 'system' as const, content: `Error: ${errorMessage}` };
-                dispatch({ type: 'ADD_MESSAGE', payload: errorMsg });
-                dispatch({ type: 'SET_AGENT_STATE', payload: 'error' });
-            }
-        } finally {
-            dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
-            abortControllerRef.current = null;
-        }
-    }, [activeProvider, state.messages, vectorMemory, tasks, dispatch, sessionId]);
+        const toolCalls = state.pendingToolCall;
+        const denialMessages = toolCalls.map((tc: any) => 
+            new ToolMessage({
+                content: "User denied this action.",
+                tool_call_id: tc.id,
+                name: tc.name
+            })
+        );
+
+        await appWorkflow.updateState(config, { messages: denialMessages });
+        dispatch({ type: 'SET_PENDING_TOOL', payload: null });
+
+        const stream = await appWorkflow.stream(null, config);
+        await processStream(stream, sessionId);
+    }, [state.agentState, state.pendingToolCall, state.interactionMode, activeProvider, sessionId, processStream]);
 
     return (
         <Box flexDirection="column" height="100%">
@@ -404,6 +523,8 @@ const App = () => {
                         provider={activeProvider.config?.name || 'None'} 
                         model={activeProvider.config?.model || 'None'} 
                         agentState={activeProvider.error ? 'error' : state.agentState} 
+                        interactionMode={state.interactionMode}
+                        plannerMode={configManager.getSettings().plannerMode}
                     />
                     
                     <Box flexGrow={1} flexDirection="row" marginTop={1}>
@@ -416,7 +537,7 @@ const App = () => {
                                 )}
                                 <ChatView 
                                     messages={state.messages} 
-                                    height={process.stdout.rows - 12} 
+                                    height={terminalSize.rows - 12} 
                                     scrollOffset={scrollOffset}
                                 />
                             </Box>
@@ -429,10 +550,17 @@ const App = () => {
                             </Box>
                         </Box>
                         
-                        <Sidebar systemStats={systemStats} tasks={tasks} sessions={sessionList} currentSessionId={sessionId} />
+                        <Sidebar 
+                            systemStats={systemStats} 
+                            tasks={tasks} 
+                            sessions={sessionList} 
+                            currentSessionId={sessionId} 
+                            taskQueue={state.taskQueue}
+                            plannerMode={configManager.getSettings().plannerMode}
+                        />
                     </Box>
 
-                    <ToolStatus activeTools={state.activeTools} agentState={state.agentState} />
+                    <ToolStatus activeTools={state.activeTools} agentState={state.agentState} pendingToolCall={state.pendingToolCall} />
                     
                     <Box marginTop={0}>
                         <InputBar onSubmit={handleSendMessage} tools={getTools()} />

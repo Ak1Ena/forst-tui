@@ -20,12 +20,24 @@ INSTRUCTIONS:
 - Be concise, professional, and proactive in using your tools.
 `;
 
-export const getSystemPrompt = () => {
+export const getSystemPrompt = (plannerMode: boolean = false) => {
     try {
         const memories = getCoreMemories();
         const skillsPrompt = SkillManager.getSkillsPrompt();
         
         let finalPrompt = BASE_PROMPT;
+
+        if (plannerMode) {
+            finalPrompt += `
+\n--- PLANNER MODE ACTIVE ---
+You are in Coworker Planner Mode. 
+1. When the user gives a complex instruction, your FIRST response must be a plan.
+2. Format the plan exactly like this: PLAN: [{"id": "t1", "description": "Step 1..."}, {"id": "t2", "description": "Step 2..."}]
+3. After the plan is accepted, focus on one task at a time.
+4. When you finish a task, include "COMPLETED: <task_id>" in your response.
+5. If the user manually adds a task (you will see it in the [TASK QUEUE]), adjust your actions to include it.
+`;
+        }
 
         if (memories.length > 0) {
             const aiMemories = memories.filter(m => m.category === 'ai').map(m => `- ${m.content}`).join('\n');

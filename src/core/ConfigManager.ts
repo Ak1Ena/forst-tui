@@ -16,6 +16,8 @@ export interface AppSettings {
     defaultProvider: string;
     theme: string;
     recursionLimit: number;
+    interactionMode: 'approval' | 'auto-accept' | 'yolo';
+    plannerMode: boolean;
     providers: ProviderConfig[];
 }
 
@@ -34,6 +36,8 @@ const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',
     theme: 'default',
     recursionLimit: 50,
+    interactionMode: 'yolo',
+    plannerMode: false,
     providers: [
         {
             id: 'gemini-default',
