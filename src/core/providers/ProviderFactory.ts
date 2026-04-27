@@ -1,6 +1,7 @@
 import { ProviderConfig } from '../ConfigManager.js';
 import { GeminiProvider } from './GeminiProvider.js';
 import { OpenAIProvider } from './OpenAIProvider.js';
+import { AnthropicProvider } from './AnthropicProvider.js';
 import { LocalLLMProvider } from './LocalLLMProvider.js';
 import { BaseProvider } from './BaseProvider.js';
 
@@ -15,6 +16,12 @@ export class ProviderFactory {
             case 'openai':
             case 'openrouter':
                 return new OpenAIProvider({
+                    apiKey: config.apiKey,
+                    baseUrl: config.baseUrl,
+                    model: config.model
+                });
+            case 'anthropic':
+                return new AnthropicProvider({
                     apiKey: config.apiKey,
                     baseUrl: config.baseUrl,
                     model: config.model
