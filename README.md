@@ -28,8 +28,8 @@ If you see an `EACCES` or "permission denied" error during global installation:
 
 ## ✨ Features
 
-### 🧠 Agentic Workflow (NEW)
-- **LangGraph Orchestration**: Uses a state-based graph for robust agentic behavior (Agent -> Tools -> Router loop).
+### 🧠 Agentic Workflow
+- **LangGraph Orchestration**: Uses a state-based graph for robust agentic behavior (Agent → Tools → Router loop).
 - **Observability**: Built-in **LangSmith** support for tracing thoughts and tool executions.
 - **Automatic Titling**: Conversations are automatically named by the model after the first interaction.
 
@@ -38,13 +38,37 @@ If you see an `EACCES` or "permission denied" error during global installation:
 - **Dynamic Configuration**: Add and switch providers in real-time via the Settings view (**Ctrl+S**).
 
 ### 🛠️ Advanced Tool System
-- **System Tools**: Run shell commands, list files, and **write/edit code**.
+- **System Tools**: Run shell commands, list files, read files, and **write/edit code**.
+- **File Writing**: The `write_file` tool can create or overwrite files, auto-creates missing directories, and returns a preview of the written content.
 - **Vim Integration**: Use `/code <path>` to open files in `vim` directly from the chat.
 - **Web Tools**: Search the web via DuckDuckGo.
 - **Discord Integration**: Send messages to Discord channels.
 
+### 🧩 Skill Manager
+- **Persistent Skills**: Teach the AI specialized instructions or domain knowledge that persist across all sessions.
+- **Markdown-based**: Skills are stored as `.md` files in `~/.forst-tui/skills/`.
+- **Tool-driven**: The AI can `list`, `read`, `add`, and `delete` skills autonomously using the `manage_skills` tool.
+- **Auto-injected**: All installed skills are automatically included in the system prompt at startup.
+
+  ```
+  # Example: telling the AI to add a skill
+  "Remember that I always want TypeScript strict mode in my projects."
+  ```
+
+### 🧠 Core Memory
+- **Cross-session Memory**: Store persistent facts about yourself, the user, or the world using the `core_memory` tool.
+- **Categorized**: Memories are tagged as `ai`, `user`, or `world` for organized retrieval.
+- **SQLite-backed**: Stored in `~/.forst-tui/core_memory.db` — survives restarts and reinstalls.
+- **Full CRUD**: The AI can `add`, `list`, and `delete` individual memory entries by ID.
+
+  | Action | Description |
+  |--------|-------------|
+  | `add`  | Store a new fact with a category |
+  | `list` | Retrieve all stored memories |
+  | `delete` | Remove a memory by its ID |
+
 ### 💾 Persistent Memory & Global Storage
-- **Global Settings**: Configuration, history, and memory are stored in **`~/.forst-tui/`**.
+- **Global Settings**: Configuration, history, skills, and memory are stored in **`~/.forst-tui/`**.
 - **SQLite History**: Fully persistent, searchable message history.
 - **Vector Memory**: Semantic retrieval using `faiss-node` for long-term project context.
 
@@ -76,10 +100,21 @@ export LANGCHAIN_API_KEY=your_langsmith_key
 ```
 
 ## 📂 Project Structure
-- `src/core`: Workflow orchestration (LangGraph), Providers, and Config.
+
+```
+~/.forst-tui/
+├── settings.config.json   # Provider and app configuration
+├── history.db             # SQLite message history
+├── core_memory.db         # Persistent core memories
+├── vector_store/          # FAISS semantic memory index
+└── skills/                # Markdown skill files (auto-loaded)
+```
+
+**Source layout:**
+- `src/core`: Workflow orchestration (LangGraph), Providers, Config, and SkillManager.
 - `src/tools`: Tool definitions (System, Web, Integrations).
 - `src/components`: Ink React components for the TUI.
-- `src/database`: SQLite schema and Vector Store management.
+- `src/database`: SQLite schema, Core Memory, and Vector Store management.
 
 ## License
 MIT

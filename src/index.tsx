@@ -25,8 +25,56 @@ import {createAgentWorkflow} from './core/Workflow.js';
 import {HumanMessage, AIMessage, SystemMessage, ToolMessage} from '@langchain/core/messages';
 import { MemorySaver } from "@langchain/langgraph";
 import { Client } from "langsmith";
+import { Message } from './core/AppContext.js';
 
 const checkpointer = new MemorySaver();
+
+/**
+ * Rebuilds the LangGraph MemorySaver checkpoint from saved DB messages so the
+ * LLM sees full conversation history when a session is loaded or switched.
+ */
+const hydrateCheckpointer = async (
+    sessionId: number,
+    messages: Message[],
+    provider: any,
+    plannerMode: boolean
+) => {
+    if (messages.length === 0) return;
+
+    const appWorkflow = createAgentWorkflow(provider, checkpointer, false);
+    const config = { configurable: { thread_id: sessionId.toString() } };
+
+    // Convert DB Message records to LangChain message objects
+    const langchainMessages: any[] = [
+        new SystemMessage(getSystemPrompt(plannerMode))
+    ];
+
+    for (const msg of messages) {
+        if (msg.role === 'user') {
+            langchainMessages.push(new HumanMessage(msg.content));
+        } else if (msg.role === 'assistant') {
+            const aiMsg = new AIMessage({
+                content: msg.content || '',
+                tool_calls: msg.tool_calls ?? undefined,
+            });
+            langchainMessages.push(aiMsg);
+        } else if (msg.role === 'tool') {
+            langchainMessages.push(
+                new ToolMessage({
+                    content: msg.content,
+                    tool_call_id: msg.tool_call_id || 'unknown',
+                    name: msg.name || 'tool',
+                })
+            );
+        }
+    }
+
+    try {
+        await appWorkflow.updateState(config, { messages: langchainMessages });
+    } catch {
+        // Non-fatal: if hydration fails the agent will still work, just without history in LLM context
+    }
+};
 
 const App = () => {
     const {state, dispatch} = useAppContext();
@@ -192,6 +240,16 @@ const App = () => {
         setSessionList(getSessions());
         const initialMessages = getMessages(Number(currentSid));
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
+
+        // Hydrate LangGraph checkpointer so the LLM has full session history in context
+        if (initialMessages.length > 0 && activeProvider.instance) {
+            hydrateCheckpointer(
+                Number(currentSid),
+                initialMessages,
+                activeProvider.instance,
+                configManager.getSettings().plannerMode
+            );
+        }
 
         vectorMemory.init();
 
@@ -384,6 +442,17 @@ const App = () => {
                         const msgs = getMessages(targetId);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
+
+                        // Hydrate checkpointer so LLM has full history for resumed session
+                        if (msgs.length > 0 && activeProvider.instance) {
+                            hydrateCheckpointer(
+                                targetId,
+                                msgs,
+                                activeProvider.instance,
+                                configManager.getSettings().plannerMode
+                            );
+                        }
+
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${targetId}]` } });
                         return;
                     }
@@ -515,6 +584,18 @@ const App = () => {
                         setSessionId(id);
                         const msgs = getMessages(id);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
+                        dispatch({ type: 'CLEAR_QUEUE' });
+
+                        // Hydrate checkpointer so LLM has full history for resumed session
+                        if (msgs.length > 0 && activeProvider.instance) {
+                            hydrateCheckpointer(
+                                id,
+                                msgs,
+                                activeProvider.instance,
+                                configManager.getSettings().plannerMode
+                            );
+                        }
+
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
                         setView('chat');
                     }}
