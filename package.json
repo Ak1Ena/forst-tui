@@ -1,7 +1,7 @@
 {
   "name": "forst-tui",
   "version": "0.1.0",
-  "description": "A Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.",
+  "description": "A powerful Node.js-based TUI wrapper for LLMs, built with LangChain and Ink.",
   "main": "dist/index.js",
   "bin": {
     "forst-tui": "dist/index.js"
