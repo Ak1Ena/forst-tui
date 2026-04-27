@@ -41,16 +41,23 @@ export const saveMessage = (sessionId: number, message: Message, provider?: stri
         INSERT INTO messages (session_id, role, content, provider, model, tool_calls, tool_call_id, name, args)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    // SQLite3 can only bind numbers, strings, bigints, buffers, and null.
+    // We must ensure content is a string even if it arrived as an array/object from LLM.
+    const content = typeof message.content === 'string' 
+        ? message.content 
+        : JSON.stringify(message.content);
+
     const info = stmt.run(
         sessionId,
         message.role, 
-        message.content, 
+        content, 
         provider || null, 
         model || null,
         message.tool_calls ? JSON.stringify(message.tool_calls) : null,
-        message.tool_call_id || null,
-        message.name || null,
-        message.args ? JSON.stringify(message.args) : null
+        message.tool_call_id ? String(message.tool_call_id) : null,
+        message.name ? String(message.name) : null,
+        message.args ? (typeof message.args === 'string' ? message.args : JSON.stringify(message.args)) : null
     );
     return info.lastInsertRowid;
 };

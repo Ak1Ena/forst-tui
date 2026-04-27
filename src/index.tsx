@@ -367,9 +367,10 @@ const App = () => {
                         else if (msg instanceof SystemMessage) role = 'system';
                         else if (msg instanceof AIMessage) role = 'assistant';
                         
+                        const content = ensureString(msg.content);
                         const formattedMsg = {
                             role,
-                            content: (msg.content as string) || '',
+                            content: content,
                             tool_calls: (msg as any).tool_calls,
                             tool_call_id: (msg as any).tool_call_id,
                             name: (msg as any).name,
