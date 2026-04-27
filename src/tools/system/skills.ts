@@ -6,7 +6,7 @@ import { SKILLS_DIR } from '../../core/ConfigManager.js';
 
 export const skillsTool = new DynamicStructuredTool({
     name: 'manage_skills',
-    description: 'Manage specialized skills. Use this to list available skills, read their content, or add new skills (instructions/knowledge) permanently. Skills are stored as Markdown files.',
+    description: 'Add, delete, or retrieve persistent AI skill instructions stored as Markdown. Use only when the user explicitly asks to save, install, remove, or look up a named skill or specialized knowledge module.',
     schema: z.object({
         action: z.enum(['list', 'read', 'add', 'delete']).describe('The action to perform.'),
         skillName: z.string().optional().describe('The name of the skill (e.g., "react-expert").'),

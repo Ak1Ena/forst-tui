@@ -44,30 +44,75 @@ const hydrateCheckpointer = async (
     const appWorkflow = createAgentWorkflow(provider, checkpointer, false);
     const config = { configurable: { thread_id: sessionId.toString() } };
 
-    // Convert DB Message records to LangChain message objects
-    const langchainMessages: any[] = [
-        new SystemMessage(getSystemPrompt(plannerMode))
-    ];
-
+    // Convert DB Message records to LangChain message objects, then sanitize the
+    // sequence so Claude never receives mid-conversation system messages or a broken
+    // user/assistant/tool alternation (which causes a 400 on resume).
+    const raw: any[] = [];
     for (const msg of messages) {
         if (msg.role === 'user') {
-            langchainMessages.push(new HumanMessage(msg.content));
+            raw.push(new HumanMessage(msg.content));
         } else if (msg.role === 'assistant') {
-            const aiMsg = new AIMessage({
+            raw.push(new AIMessage({
                 content: msg.content || '',
                 tool_calls: msg.tool_calls ?? undefined,
-            });
-            langchainMessages.push(aiMsg);
+            }));
         } else if (msg.role === 'tool') {
-            langchainMessages.push(
-                new ToolMessage({
-                    content: msg.content,
-                    tool_call_id: msg.tool_call_id || 'unknown',
-                    name: msg.name || 'tool',
-                })
-            );
+            raw.push(new ToolMessage({
+                content: msg.content,
+                tool_call_id: msg.tool_call_id || 'unknown',
+                name: msg.name || 'tool',
+            }));
+        }
+        // skip 'system' rows — they are re-injected as the first message below
+    }
+
+    // Sanitize: Claude requires strict sequencing.
+    // Rules we enforce:
+    //   1. Every `tool` message must be immediately preceded by an `ai` message that
+    //      has tool_calls.  Drop orphaned tool messages.
+    //   2. Consecutive user messages are collapsed — keep only the last one.
+    //   3. The sequence must end with a `human` message so the LLM can reply to it
+    //      when the user sends the next input.  If it ends with `ai` or `tool`, trim
+    //      back to the last human message and everything that follows it.
+    const sanitized: any[] = [];
+    for (let i = 0; i < raw.length; i++) {
+        const msg = raw[i];
+        const type = msg._getType();
+
+        if (type === 'tool') {
+            // Only keep if previous kept message was an ai with tool_calls
+            const prev = sanitized[sanitized.length - 1];
+            if (prev && prev._getType() === 'ai' && (prev as AIMessage).tool_calls?.length) {
+                sanitized.push(msg);
+            }
+            // otherwise discard orphaned tool message
+        } else if (type === 'human') {
+            // Collapse consecutive human messages — keep the last one
+            if (sanitized.length > 0 && sanitized[sanitized.length - 1]._getType() === 'human') {
+                sanitized[sanitized.length - 1] = msg;
+            } else {
+                sanitized.push(msg);
+            }
+        } else {
+            sanitized.push(msg);
         }
     }
+
+    // Trim the tail so the sequence ends after the last human message + everything
+    // that legitimately follows it (ai + tool turns).  This avoids sending history
+    // that ends mid-tool-call and confusing the model.
+    let lastHumanIdx = -1;
+    for (let i = sanitized.length - 1; i >= 0; i--) {
+        if (sanitized[i]._getType() === 'human') { lastHumanIdx = i; break; }
+    }
+    const trimmed = lastHumanIdx >= 0 ? sanitized.slice(0, lastHumanIdx + 1) : [];
+
+    if (trimmed.length === 0) return;
+
+    const langchainMessages: any[] = [
+        new SystemMessage(getSystemPrompt(plannerMode)),
+        ...trimmed,
+    ];
 
     try {
         await appWorkflow.updateState(config, { messages: langchainMessages });

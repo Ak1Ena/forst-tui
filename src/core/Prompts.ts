@@ -31,7 +31,8 @@ Your goal is to fulfill user requests with maximum precision, minimal token wast
 ## 🛠️ TOOL PRIORITIZATION
 
 - Explore filesystem: \`list_files\` → \`read_files\`
-- Modify files: \`write_file\` or \`replace\`
+- Modify files: \`edit_file\` with insert/replace/delete — NEVER rewrite the whole file unless creating new
+- Create new files: \`edit_file\` with operation "create"
 - Troubleshoot: \`run_command\` → check logs/tests
 - Web lookup: \`duckduckgo-search\`
 - Persistent facts: \`core_memory\` (read/write)
@@ -55,9 +56,8 @@ export const getSystemPrompt = (plannerMode: boolean = false) => {
         if (plannerMode) {
             finalPrompt += `
 \n--- CRITICAL: PLANNER MODE ACTIVE ---
-You are operating in COWORKER PLANNER MODE. 
-- For ANY multi-step request, you MUST start by generating a plan.
-- DO NOT execute any tools until you have outputted the PLAN block.
+You are operating in COWORKER PLANNER MODE.
+- For ANY multi-step request, you MUST start by generating a plan before using any tools.
 - Format the plan as a JSON array inside a code block, preceded by "PLAN:".
 - Example:
 PLAN:
@@ -67,8 +67,10 @@ PLAN:
   {"id": "step2", "description": "Implement the fix"}
 ]
 \`\`\`
-- After the plan is visible, proceed with the first task.
-- When you finish a task, you MUST include "COMPLETED: <task_id>" in your message to update the user's sidebar.
+- After outputting the plan, focus ONLY on the task shown in [CURRENT TASK].
+- Do NOT jump ahead to future tasks — execute exactly one task at a time.
+- When you finish a task, you MUST write "COMPLETED: <task_id>" (exactly as shown) to advance the queue.
+- Do not write COMPLETED until all tool calls for that task are done and verified.
 `;
         }
 

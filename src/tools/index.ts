@@ -1,7 +1,7 @@
 import { runCommandTool } from "./system/run_command.js";
 import { readFilesTool } from "./system/read_files.js";
 import { listFilesTool } from "./system/list_files.js";
-import { writeFileTool } from "./system/write_file.js";
+import { editFileTool } from "./system/edit_file.js";
 import { memoryTool } from "./system/memory.js";
 import { skillsTool } from "./system/skills.js";
 import { searchTool } from "./web/search.js";
@@ -13,7 +13,7 @@ export const registry: any[] = [
     runCommandTool,
     readFilesTool,
     listFilesTool,
-    writeFileTool,
+    editFileTool,
     memoryTool,
     skillsTool,
     searchTool,

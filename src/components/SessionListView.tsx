@@ -31,7 +31,6 @@ export const SessionListView = ({ sessions, currentSessionId, onSelect, onDelete
         if (key.return) {
             if (sessions[selectedIndex]) {
                 onSelect(sessions[selectedIndex].id);
-                onClose();
             }
         }
         if (input === 'd') {

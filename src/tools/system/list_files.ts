@@ -4,7 +4,7 @@ import path from "path";
 
 export const listFilesTool = new DynamicTool({
     name: "list_files",
-    description: "Lists files and directories in the specified path (defaults to current project root). Useful for exploring the project structure.",
+    description: "List files and directories at a filesystem path. Use when exploring project structure or checking what files exist in a directory.",
     func: async (input: string) => {
         try {
             const targetPath = input.trim() || process.cwd();
