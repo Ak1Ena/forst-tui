@@ -90,28 +90,47 @@ export class ToolRetriever {
 
     /**
      * Search the tool index and return the top-K most relevant tools.
+     * Uses a dynamic threshold based on the top score found.
      *
      * @param query     User message or task description
      * @param topK      Max tools to return (default 3)
-     * @param threshold Min cosine similarity to include (default 0.12)
      */
-    search(query: string, topK = 3, threshold = 0.12): ToolEntry[] {
+    search(query: string, topK = 3): ToolEntry[] {
         if (this.entries.length === 0) return [];
 
         const queryRawTF = buildTF(tokenize(query));
-        // Apply corpus IDF to query vector
         const queryVec = new Map<string, number>();
         for (const [k, v] of queryRawTF) {
             queryVec.set(k, v * (this.idf.get(k) ?? 1));
         }
 
-        const scored = this.tfVectors
-            .map((vec, i) => ({ entry: this.entries[i], score: cosineSimilarity(queryVec, vec) }))
-            .filter(r => r.score >= threshold)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, topK);
+        // 1. Calculate all scores
+        const scored = this.tfVectors.map((vec, i) => ({
+            entry: this.entries[i],
+            score: cosineSimilarity(queryVec, vec)
+        }));
 
-        return scored.map(r => r.entry);
+        // 2. Determine dynamic threshold
+        const maxScore = Math.max(...scored.map(s => s.score));
+        
+        // If the best match is very weak, we don't want to return garbage
+        const absoluteFloor = 0.08; 
+        if (maxScore < absoluteFloor) return [];
+
+        /**
+         * Dynamic Logic:
+         * - If we have a very strong match (e.g. 0.6), only return others within 50% of it.
+         * - If the match is mediocre (e.g. 0.2), be more inclusive (return others within 70% of it).
+         * - Never go below the absoluteFloor.
+         */
+        const relativeRatio = maxScore > 0.4 ? 0.5 : 0.7;
+        const dynamicThreshold = Math.max(absoluteFloor, maxScore * relativeRatio);
+
+        return scored
+            .filter(r => r.score >= dynamicThreshold)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, topK)
+            .map(r => r.entry);
     }
 
     /**

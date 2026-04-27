@@ -55,7 +55,11 @@ function getRetrievalQuery(msgs: BaseMessage[], currentTask?: Task): string {
     return '';
 }
 
-export const createAgentWorkflow = (provider: BaseProvider, checkpointer?: any, interrupt?: boolean) => {
+export const createAgentWorkflow = (
+  provider: BaseProvider, 
+  interactionMode: 'approval' | 'auto-accept' | 'yolo',
+  checkpointer?: any
+) => {
   const tools = getTools();
   const model = provider.getModel();
 
@@ -82,7 +86,15 @@ export const createAgentWorkflow = (provider: BaseProvider, checkpointer?: any, 
 
     // Check if there are still pending or in-progress tasks
     const hasMoreTasks = taskQueue.some(t => t.status === 'pending' || t.status === 'in-progress');
-    if (hasMoreTasks) return "agent";
+    
+    if (hasMoreTasks) {
+        if (interactionMode === 'yolo') {
+            return "agent";
+        }
+        // If not YOLO, and we have a text response while tasks are still pending,
+        // stop and wait for human feedback/answer.
+        return END;
+    }
 
     return END;
   };
@@ -190,6 +202,6 @@ export const createAgentWorkflow = (provider: BaseProvider, checkpointer?: any, 
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: interrupt ? ["tools"] : undefined
+    interruptBefore: interactionMode === 'approval' ? ["tools"] : undefined
   });
 };

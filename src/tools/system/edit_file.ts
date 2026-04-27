@@ -116,19 +116,44 @@ export const editFileTool = new DynamicStructuredTool({
             const changedEnd   = operation === 'insert'
                 ? changedStart + newContent.length
                 : changedStart + newContent.length;
+            
             const previewStart = Math.max(0, changedStart - 2);
             const previewEnd   = Math.min(result.length, changedEnd + 3);
-            const previewLines = result
-                .slice(previewStart, previewEnd)
-                .map((l, i) => `${previewStart + i + 1}: ${l}`)
-                .join('\n');
 
             const opDesc =
                 operation === 'insert'  ? `inserted ${newContent.length} line(s) after line ${from}` :
                 operation === 'replace' ? `replaced lines ${from}-${to} with ${newContent.length} line(s)` :
                                           `deleted lines ${from}-${to}`;
 
-            return `${filePath}: ${opDesc}. File now has ${result.length} lines.\n\nContext:\n${previewLines}`;
+            // Build a boxed context window
+            const previewLines = result.slice(previewStart, previewEnd);
+            const maxLineNumWidth = String(previewEnd).length;
+            const maxWidth = Math.min(80, Math.max(...previewLines.map(l => l.length + maxLineNumWidth + 5)));
+            
+            const boxTop    = `┌${'─'.repeat(maxWidth + 2)}┐`;
+            const boxBottom = `└${'─'.repeat(maxWidth + 2)}┘`;
+            
+            const formattedPreview = previewLines.map((l, i) => {
+                const curLine = previewStart + i + 1;
+                let marker = ' ';
+                if (operation === 'insert' && curLine > from && curLine <= from + newContent.length) marker = '+';
+                else if (operation === 'replace' && curLine >= from && curLine < from + newContent.length) marker = '+';
+                else if (operation === 'delete' && curLine === from) marker = '-'; // Note: delete preview shows state AFTER delete
+
+                const lineNumStr = String(curLine).padStart(maxLineNumWidth, ' ');
+                const content = `${marker} ${lineNumStr} │ ${l}`;
+                return `│ ${content.padEnd(maxWidth).slice(0, maxWidth)} │`;
+            }).join('\n');
+
+            return [
+                `${filePath}: ${opDesc}`,
+                `File now has ${result.length} lines.`,
+                '',
+                'Changes:',
+                boxTop,
+                formattedPreview,
+                boxBottom
+            ].join('\n');
         } catch (error: any) {
             return `Error: ${error?.message ?? String(error)}`;
         }

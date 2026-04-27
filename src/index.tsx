@@ -41,7 +41,7 @@ const hydrateCheckpointer = async (
 ) => {
     if (messages.length === 0) return;
 
-    const appWorkflow = createAgentWorkflow(provider, checkpointer, false);
+    const appWorkflow = createAgentWorkflow(provider, 'yolo', checkpointer);
     const config = { configurable: { thread_id: sessionId.toString() } };
 
     // Convert DB Message records to LangChain message objects, then sanitize the
@@ -167,11 +167,18 @@ const App = () => {
         let count = 0;
         state.messages.forEach((msg, i) => {
             const isFirstTool = msg.role === 'tool' && (i === 0 || state.messages[i - 1].role !== 'tool');
-            if (msg.role !== 'tool' || isFirstTool) count += 1; // Header
+            if (msg.role !== 'tool' || isFirstTool) count += 1; // Header (e.g. 🤖 ASSISTANT)
             
+            if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+                count += msg.tool_calls.length;
+            }
+
             if (msg.role === 'tool') {
-                count += 1; // Tool name + args
-            } else {
+                count += 1; // 🛠️ RESULT header
+                const isEdit = msg.name === 'edit_file';
+                const result = isEdit ? msg.content : (msg.content.length > 500 ? msg.content.slice(0, 500) + '...' : msg.content);
+                count += result.split('\n').length;
+            } else if (msg.content) {
                 count += msg.content.split('\n').length;
             }
             count += 1; // Spacing
@@ -283,6 +290,7 @@ const App = () => {
         
         setSessionId(Number(currentSid));
         setSessionList(getSessions());
+        dispatch({ type: 'SET_INTERACTION_MODE', payload: configManager.getSettings().interactionMode as any });
         const initialMessages = getMessages(Number(currentSid));
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
 
@@ -396,7 +404,7 @@ const App = () => {
                 }
             }
 
-            const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
             const config = { configurable: { thread_id: sessionId.toString() } };
             
             // Sync current task queue into graph state before checking
@@ -536,8 +544,20 @@ const App = () => {
                 dispatch({ type: 'CLEAR_QUEUE' });
                 return;
             }
+            if (command === 'mode') {
+                const newMode = parts[1]?.toLowerCase();
+                if (newMode === 'approval' || newMode === 'yolo' || newMode === 'auto-accept') {
+                    dispatch({ type: 'SET_INTERACTION_MODE', payload: newMode as any });
+                    configManager.save({ ...configManager.getSettings(), interactionMode: newMode as any });
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Interaction mode changed to ${newMode.toUpperCase()}` } });
+                } else {
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Current mode: ${state.interactionMode.toUpperCase()}. Usage: /mode [approval|yolo|auto-accept]` } });
+                }
+                return;
+            }
+
             if (command === 'help') {
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>|delete <id>], /clear, /help, /tasks, /code <file>' } });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>|delete <id>], /clear, /help, /tasks, /code <file>, /mode [approval|yolo|auto-accept]' } });
                 return;
             }
         }
@@ -549,8 +569,8 @@ const App = () => {
 
         const appWorkflow = createAgentWorkflow(
             activeProvider.instance, 
-            checkpointer, 
-            state.interactionMode === 'approval'
+            state.interactionMode,
+            checkpointer
         );
         
         // Sync current task queue into graph state
@@ -579,7 +599,7 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
         const config = {
             configurable: { thread_id: sessionId.toString() },
             recursionLimit: configManager.getSettings().recursionLimit || 50
@@ -594,7 +614,7 @@ const App = () => {
         
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, checkpointer, state.interactionMode === 'approval');
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
         const config = {
             configurable: { thread_id: sessionId.toString() },
             recursionLimit: configManager.getSettings().recursionLimit || 50

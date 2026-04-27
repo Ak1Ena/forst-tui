@@ -49,16 +49,18 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
             }
 
             if (msg.role === 'tool') {
-                const result = msg.content.length > 200 ? msg.content.slice(0, 200) + '...' : msg.content;
+                // Remove truncation for edit_file, and increase limit for others
+                const isEdit = msg.name === 'edit_file';
+                const result = isEdit ? msg.content : (msg.content.length > 500 ? msg.content.slice(0, 500) + '...' : msg.content);
+                
                 lines.push({ 
                     text: `   🛠️ RESULT: [${msg.name}]`, 
                     color: 'cyan', 
                     bold: true
                 });
                 result.split('\n').forEach(line => {
-                    if (line.trim()) {
-                        lines.push({ text: `     ${line}`, color: 'gray' });
-                    }
+                    // Keep empty lines for boxed layout
+                    lines.push({ text: `     ${line}`, color: 'gray' });
                 });
             } else if (msg.content) {
                 // Split content into lines and handle code blocks
