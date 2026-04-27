@@ -104,17 +104,67 @@ export LANGCHAIN_API_KEY=your_langsmith_key
 ```
 ~/.forst-tui/
 ├── settings.config.json   # Provider and app configuration
+## 📂 Project Structure
+
+```
+~/.forst-tui/
+├── settings.config.json   # Provider and app configuration
 ├── history.db             # SQLite message history
 ├── core_memory.db         # Persistent core memories
 ├── vector_store/          # FAISS semantic memory index
 └── skills/                # Markdown skill files (auto-loaded)
 ```
 
-**Source layout:**
-- `src/core`: Workflow orchestration (LangGraph), Providers, Config, and SkillManager.
-- `src/tools`: Tool definitions (System, Web, Integrations).
-- `src/components`: Ink React components for the TUI.
-- `src/database`: SQLite schema, Core Memory, and Vector Store management.
-
-## License
-MIT
+**Source layout (`src/`):**
+```
+src/
+├── index.tsx                        # Entry point
+├── core/
+│   ├── Agent.ts                     # LangGraph agent node
+│   ├── AppContext.tsx                # Global React context
+│   ├── ConfigManager.ts             # Settings read/write
+│   ├── Heartbeat.ts                 # Keep-alive / health
+│   ├── Prompts.ts                   # System prompt builder
+│   ├── SkillManager.ts              # Skill file management
+│   ├── ToolRetriever.ts             # Dynamic tool selection
+│   ├── Workflow.ts                  # LangGraph graph definition
+│   ├── monitors/
+│   │   └── SystemMonitor.ts         # CPU/RAM stats
+│   └── providers/
+│       ├── BaseProvider.ts          # Abstract provider interface
+│       ├── AnthropicProvider.ts
+│       ├── GeminiProvider.ts
+│       ├── LocalLLMProvider.ts      # Ollama / LM Studio
+│       ├── OpenAIProvider.ts
+│       └── ProviderFactory.ts       # Provider instantiation
+├── tools/
+│   ├── index.ts                     # Tool registry
+│   ├── system/
+│   │   ├── edit_file.ts
+│   │   ├── list_files.ts
+│   │   ├── memory.ts                # core_memory tool
+│   │   ├── read_files.ts
+│   │   ├── run_command.ts
+│   │   ├── skills.ts                # manage_skills tool
+│   │   └── write_file.ts
+│   ├── web/
+│   │   └── search.ts                # DuckDuckGo search
+│   └── integrations/
+│       └── discord.ts
+├── components/
+│   ├── AnimatedSpinner.tsx
+│   ├── ChatView.tsx
+│   ├── CodeBlock.tsx
+│   ├── InputBar.tsx
+│   ├── SessionListView.tsx
+│   ├── SettingsView.tsx
+│   ├── Sidebar.tsx
+│   ├── StatusHeader.tsx
+│   ├── Table.tsx
+│   └── ToolStatus.tsx
+└── database/
+    ├── schema.ts                    # SQLite schema definitions
+    ├── messages.ts                  # Chat history queries
+    ├── coreMemory.ts                # Core memory CRUD
+    └── vectorStore.ts               # FAISS vector store
+```
