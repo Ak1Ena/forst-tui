@@ -25,7 +25,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ak1Ena/forst-tui.git"
+    "url": "https://github.com/Ak1Ena/forst-tui"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "tui",
@@ -37,7 +40,7 @@
     "terminal",
     "langgraph"
   ],
-  "author": "Aki <poomzahathothai@gmial.com>",
+  "author": "Aki <poomzahathothai@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Ak1Ena/forst-tui/issues"
