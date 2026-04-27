@@ -227,6 +227,10 @@ const App = () => {
                 const nodeName = Object.keys(chunk)[0];
                 const output = (chunk as any)[nodeName];
 
+                if (output && output.taskQueue) {
+                    dispatch({ type: 'SET_QUEUE', payload: output.taskQueue });
+                }
+
                 if (output && output.messages) {
                     const newMsgs = output.messages;
                     for (const msg of newMsgs) {
@@ -319,7 +323,7 @@ const App = () => {
         } finally {
             abortControllerRef.current = null;
         }
-    }, [activeProvider, state.interactionMode, vectorMemory, dispatch]);
+    }, [activeProvider, state.interactionMode, vectorMemory, dispatch, state.taskQueue]);
 
     const handleSendMessage = useCallback(async (text: string) => {
         if (!activeProvider.instance) {
@@ -435,28 +439,26 @@ const App = () => {
             state.interactionMode === 'approval'
         );
         
-        const langchainMessages = [
-            new SystemMessage(getSystemPrompt(configManager.getSettings().plannerMode)),
-            ...state.messages.map(m => {
-                if (m.role === 'user') return new HumanMessage(m.content);
-                if (m.role === 'assistant') return new AIMessage({ content: m.content, tool_calls: m.tool_calls });
-                if (m.role === 'system') return new SystemMessage(m.content);
-                if (m.role === 'tool') return new ToolMessage({ content: m.content, tool_call_id: m.tool_call_id || '', name: m.name });
-                return new HumanMessage(m.content);
-            }),
-            new HumanMessage(text)
-        ];
-
-        dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
-
+        // Sync current task queue into graph state
         const config = {
             configurable: { thread_id: sessionId.toString() },
             recursionLimit: configManager.getSettings().recursionLimit || 50
         };
+        await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
 
-        const stream = await appWorkflow.stream({ messages: langchainMessages }, config);
+        // We only pass the NEWEST message. 
+        // LangGraph's MemorySaver (checkpointer) will handle the history via thread_id.
+        const inputMessages: any[] = [];
+        if (state.messages.length === 0) {
+            inputMessages.push(new SystemMessage(getSystemPrompt(configManager.getSettings().plannerMode)));
+        }
+        inputMessages.push(new HumanMessage(text));
+
+        dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
+
+        const stream = await appWorkflow.stream({ messages: inputMessages }, config);
         await processStream(stream, sessionId);
-    }, [activeProvider, state.messages, state.interactionMode, vectorMemory, tasks, dispatch, sessionId, processStream]);
+    }, [activeProvider, state.messages, state.interactionMode, vectorMemory, tasks, dispatch, sessionId, processStream, state.taskQueue]);
 
     const handleApprove = useCallback(async () => {
         if (state.agentState !== 'awaiting_approval') return;
