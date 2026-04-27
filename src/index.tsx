@@ -160,6 +160,7 @@ const App = () => {
         if (view === 'chat') {
             if (input === 'l' && key.ctrl) {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
+                dispatch({ type: 'CLEAR_QUEUE' });
             }
             if (key.upArrow) {
                 setScrollOffset(prev => Math.min(prev + 1, Math.max(0, totalLines - 5)));
@@ -258,15 +259,21 @@ const App = () => {
                             // Task Parsing logic
                             if (formattedMsg.content.includes('PLAN:')) {
                                 try {
-                                    const jsonStr = formattedMsg.content.split('PLAN:')[1].trim();
-                                    const tasks = JSON.parse(jsonStr.split('\n')[0]); // Take first line of JSON
-                                    if (Array.isArray(tasks)) {
-                                        const formattedTasks = tasks.map((t: any) => ({
-                                            id: t.id || Math.random().toString(36).slice(2, 9),
-                                            description: t.description || String(t),
-                                            status: 'pending' as const
-                                        }));
-                                        dispatch({ type: 'SET_QUEUE', payload: formattedTasks });
+                                    // Robust parsing for JSON blocks
+                                    const planPart = formattedMsg.content.split('PLAN:')[1];
+                                    const jsonMatch = planPart.match(/```json\s*([\s\S]*?)```/) || planPart.match(/\[([\s\S]*?)\]/);
+                                    
+                                    if (jsonMatch) {
+                                        const jsonStr = jsonMatch[0].startsWith('```') ? jsonMatch[1] : jsonMatch[0];
+                                        const tasks = JSON.parse(jsonStr.trim());
+                                        if (Array.isArray(tasks)) {
+                                            const formattedTasks = tasks.map((t: any) => ({
+                                                id: String(t.id || Math.random().toString(36).slice(2, 9)),
+                                                description: t.description || String(t),
+                                                status: 'pending' as const
+                                            }));
+                                            dispatch({ type: 'SET_QUEUE', payload: formattedTasks });
+                                        }
                                     }
                                 } catch (e) { /* ignore parse errors */ }
                             }
@@ -362,6 +369,7 @@ const App = () => {
                     setSessionId(newSid);
                     setSessionList(getSessions());
                     dispatch({ type: 'SET_MESSAGES', payload: [] });
+                    dispatch({ type: 'CLEAR_QUEUE' });
                     dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Switched to new session [${newSid}]` } });
                     return;
                 }
@@ -371,6 +379,7 @@ const App = () => {
                         setSessionId(targetId);
                         const msgs = getMessages(targetId);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
+                        dispatch({ type: 'CLEAR_QUEUE' });
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${targetId}]` } });
                         return;
                     }
@@ -384,6 +393,7 @@ const App = () => {
                             const newSid = Number(createSession());
                             setSessionId(newSid);
                             dispatch({ type: 'SET_MESSAGES', payload: [] });
+                            dispatch({ type: 'CLEAR_QUEUE' });
                         }
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Deleted session [${targetId}]` } });
                         return;
@@ -405,6 +415,7 @@ const App = () => {
 
             if (command === 'clear') {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
+                dispatch({ type: 'CLEAR_QUEUE' });
                 return;
             }
             if (command === 'help') {

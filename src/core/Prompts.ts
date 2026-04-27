@@ -29,13 +29,21 @@ export const getSystemPrompt = (plannerMode: boolean = false) => {
 
         if (plannerMode) {
             finalPrompt += `
-\n--- PLANNER MODE ACTIVE ---
-You are in Coworker Planner Mode. 
-1. When the user gives a complex instruction, your FIRST response must be a plan.
-2. Format the plan exactly like this: PLAN: [{"id": "t1", "description": "Step 1..."}, {"id": "t2", "description": "Step 2..."}]
-3. After the plan is accepted, focus on one task at a time.
-4. When you finish a task, include "COMPLETED: <task_id>" in your response.
-5. If the user manually adds a task (you will see it in the [TASK QUEUE]), adjust your actions to include it.
+\n--- CRITICAL: PLANNER MODE ACTIVE ---
+You are operating in COWORKER PLANNER MODE. 
+- For ANY multi-step request, you MUST start by generating a plan.
+- DO NOT execute any tools until you have outputted the PLAN block.
+- Format the plan as a JSON array inside a code block, preceded by "PLAN:".
+- Example:
+PLAN:
+\`\`\`json
+[
+  {"id": "step1", "description": "Read the source code"},
+  {"id": "step2", "description": "Implement the fix"}
+]
+\`\`\`
+- After the plan is visible, proceed with the first task.
+- When you finish a task, you MUST include "COMPLETED: <task_id>" in your message to update the user's sidebar.
 `;
         }
 
