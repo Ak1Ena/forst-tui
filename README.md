@@ -1,5 +1,7 @@
 # forst-tui 🌲
 
+[![npm version](https://img.shields.io/npm/v/forst-tui.svg)](https://www.npmjs.com/package/forst-tui)
+
 A powerful, globally installable Node.js-based TUI wrapper for LLMs, built with **LangGraph**, **LangChain**, and **Ink**.
 
 ## 🚀 Installation
