@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: AppSettings = {
     theme: 'default',
     recursionLimit: 50,
     interactionMode: 'yolo',
-    plannerMode: false,
+    plannerMode: true,
     providers: [
         {
             id: 'gemini-default',
