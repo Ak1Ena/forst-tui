@@ -46,7 +46,7 @@ If you see an `EACCES` or "permission denied" error during global installation:
 ### 💾 Persistent Memory & Global Storage
 - **Global Settings**: Configuration, history, and memory are stored in **`~/.forst-tui/`**.
 - **SQLite History**: Fully persistent, searchable message history.
-- **Vector Memory**: Semantic retrieval using `hnswlib-node` for long-term project context.
+- **Vector Memory**: Semantic retrieval using `FAISS` for long-term project context.
 
 ### 🎨 Modern TUI Interface
 - **Command Palette**: Access actions and tools via `/` suggestions.
