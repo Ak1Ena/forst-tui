@@ -12,6 +12,9 @@
     "README.md",
     "package.json"
   ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "node --import tsx src/index.tsx",
     "build": "tsc",
@@ -29,9 +32,12 @@
     "langchain",
     "ink",
     "ai",
-    "agent"
+    "agent",
+    "llm",
+    "terminal",
+    "langgraph"
   ],
-  "author": "",
+  "author": "Aki <poomzahathothai@gmial.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/Ak1Ena/forst-tui/issues"

@@ -15,6 +15,7 @@ export interface ProviderConfig {
 export interface AppSettings {
     defaultProvider: string;
     theme: string;
+    recursionLimit: number;
     providers: ProviderConfig[];
 }
 
@@ -32,6 +33,7 @@ const CONFIG_PATH = path.join(GLOBAL_DIR, 'settings.config.json');
 const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',
     theme: 'default',
+    recursionLimit: 50,
     providers: [
         {
             id: 'gemini-default',

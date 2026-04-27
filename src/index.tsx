@@ -283,7 +283,7 @@ const App = () => {
         try {
             const config = {
                 configurable: { thread_id: sessionId.toString() },
-                recursionLimit: 20
+                recursionLimit: configManager.getSettings().recursionLimit || 50
             };
 
             const stream = await appWorkflow.stream(
