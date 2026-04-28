@@ -702,6 +702,25 @@ const App = () => {
             recursionLimit: configManager.getSettings().recursionLimit || 50,
             signal: abortControllerRef.current?.signal
         };
+
+        // Pre-stream sanitization: If the graph state ends in an orphaned tool_use, 
+        // we MUST resolve it before streaming, otherwise the graph will immediately
+        // execute that tool before seeing the new human message.
+        try {
+            const currentState = await appWorkflow.getState(config);
+            const history = currentState.values.messages || [];
+            const lastMsg = history[history.length - 1];
+            
+            if (lastMsg && lastMsg._getType() === 'ai' && (lastMsg as any).tool_calls?.length) {
+                const toolMessages = (lastMsg as any).tool_calls.map((tc: any) => new ToolMessage({
+                    content: '🛑 Operation cancelled by user. Discard this intent.',
+                    tool_call_id: tc.id,
+                    name: tc.name
+                }));
+                await appWorkflow.updateState(config, { messages: toolMessages });
+            }
+        } catch (e) { /* ignore state check errors */ }
+
         await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
 
         // We only pass the NEWEST message. 
