@@ -104,14 +104,33 @@ const hydrateCheckpointer = async (
         }
     }
 
-    // Trim the tail so the sequence ends after the last human message + everything
-    // that legitimately follows it (ai + tool turns).  This avoids sending history
-    // that ends mid-tool-call and confusing the model.
-    let lastHumanIdx = -1;
+    // Trim the tail so the sequence is valid for Claude (ends with Human, or ends with a complete AI+Tool turn).
+    // We want to keep as much history as possible, but Claude crashes if it ends on an orphaned tool_use.
+    let trimToIdx = -1;
     for (let i = sanitized.length - 1; i >= 0; i--) {
-        if (sanitized[i]._getType() === 'human') { lastHumanIdx = i; break; }
+        const msg = sanitized[i];
+        const type = msg._getType();
+        
+        if (type === 'human') {
+            trimToIdx = i;
+            break;
+        }
+        if (type === 'tool') {
+            // A tool result is only valid if preceded by an AI message. 
+            // If we found a tool result at the end, the sequence is likely complete.
+            trimToIdx = i;
+            break;
+        }
+        if (type === 'ai' && !(msg as AIMessage).tool_calls?.length) {
+            // Text-only AI response at the end is fine.
+            trimToIdx = i;
+            break;
+        }
+        // If it's an AI message WITH tool_calls but no tool results followed (since we are iterating backwards),
+        // we keep looking for a safe place to stop.
     }
-    const trimmed = lastHumanIdx >= 0 ? sanitized.slice(0, lastHumanIdx + 1) : [];
+    
+    const trimmed = trimToIdx >= 0 ? sanitized.slice(0, trimToIdx + 1) : [];
 
     if (trimmed.length === 0) return;
 
@@ -231,7 +250,7 @@ const App = () => {
                     for (const tc of state.pendingToolCall) {
                         const toolMsg: Message = {
                             role: 'tool',
-                            content: '🛑 Request aborted by user.',
+                            content: '🛑 Operation cancelled by user. Do not resume.',
                             tool_call_id: tc.id,
                             name: tc.name
                         };
@@ -239,7 +258,7 @@ const App = () => {
                         saveMessage(sessionId, toolMsg);
                         
                         toolMessages.push(new ToolMessage({
-                            content: '🛑 Request aborted by user.',
+                            content: '🛑 Operation cancelled by user. Do not resume.',
                             tool_call_id: tc.id,
                             name: tc.name
                         }));
@@ -276,7 +295,7 @@ const App = () => {
                     })();
                 }
 
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Operation cancelled by user.' } });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
             }
             return;
