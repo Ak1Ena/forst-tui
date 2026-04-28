@@ -1,5 +1,5 @@
 import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
-import { BaseMessage, SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, SystemMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { getTools } from "../tools/index.js";
 import { BaseProvider } from "./providers/BaseProvider.js";
@@ -122,6 +122,32 @@ export const createAgentWorkflow = (
     let activeMessages: BaseMessage[] = systemContent 
         ? [new SystemMessage(systemContent), ...nonSystemMessages]
         : nonSystemMessages;
+
+    // --- 0.1 Sanitize for Anthropic: Every tool_use MUST have a tool_result ---
+    // If the sequence ends with an AI message containing tool calls, it means the 
+    // previous run was likely interrupted before tools could execute. 
+    // We append a "cancelled" result for each to satisfy strict provider requirements.
+    const sanitizedMessages: BaseMessage[] = [];
+    for (let i = 0; i < activeMessages.length; i++) {
+        const msg = activeMessages[i];
+        sanitizedMessages.push(msg);
+
+        if (msg._getType() === 'ai' && (msg as any).tool_calls?.length) {
+            const nextMsg = activeMessages[i + 1];
+            if (!nextMsg || nextMsg._getType() !== 'tool') {
+                // Orphaned tool call detected. Inject dummy results.
+                const toolCalls = (msg as any).tool_calls;
+                for (const tc of toolCalls) {
+                    sanitizedMessages.push(new ToolMessage({
+                        content: "Action cancelled or interrupted.",
+                        tool_call_id: tc.id || 'unknown',
+                        name: tc.name || 'unknown'
+                    }));
+                }
+            }
+        }
+    }
+    activeMessages = sanitizedMessages;
 
     // --- 1. Sync task completions from the last assistant message ---
     let updatedQueue = [...taskQueue];

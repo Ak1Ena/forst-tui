@@ -217,6 +217,23 @@ const App = () => {
                 } catch (e) {
                     // Ignore errors during abort
                 }
+
+                // If we aborted while tools were pending, we MUST add ToolMessages to history
+                // otherwise Anthropic will error on the next message in this session.
+                if (state.pendingToolCall && Array.isArray(state.pendingToolCall)) {
+                    for (const tc of state.pendingToolCall) {
+                        const toolMsg: Message = {
+                            role: 'tool',
+                            content: '🛑 Request aborted by user.',
+                            tool_call_id: tc.id,
+                            name: tc.name
+                        };
+                        dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
+                        saveMessage(sessionId, toolMsg);
+                    }
+                    dispatch({ type: 'SET_PENDING_TOOL', payload: null });
+                }
+
                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
             }
