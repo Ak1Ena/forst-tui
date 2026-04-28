@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { InteractionMode, TokenUsage } from '../core/AppContext.js';
+import { InteractionMode, TokenUsage, ToolStat } from '../core/AppContext.js';
 
 interface Props {
     provider: string;
@@ -9,9 +9,10 @@ interface Props {
     interactionMode?: InteractionMode;
     plannerMode?: boolean;
     totalUsage?: TokenUsage;
+    toolStats?: Record<string, ToolStat>;
 }
 
-export const StatusHeader = ({ provider, model, agentState, interactionMode = 'yolo', plannerMode, totalUsage }: Props) => {
+export const StatusHeader = ({ provider, model, agentState, interactionMode = 'yolo', plannerMode, totalUsage, toolStats }: Props) => {
     const getStatusColor = () => {
         switch (agentState) {
             case 'thinking': return 'yellow';
@@ -33,6 +34,16 @@ export const StatusHeader = ({ provider, model, agentState, interactionMode = 'y
         return plannerMode ? `${label} + 📋 PLANNER` : label;
     };
 
+    const getTopToolDisplay = () => {
+        if (!toolStats || Object.keys(toolStats).length === 0) return null;
+        const sorted = Object.entries(toolStats).sort((a, b) => b[1].calls - a[1].calls);
+        const [name, stat] = sorted[0];
+        const avg = Math.round(stat.totalMs / stat.calls);
+        return `🛠 ${name} ×${stat.calls} (${avg}ms avg)`;
+    };
+
+    const topToolDisplay = getTopToolDisplay();
+
     return (
         <Box borderStyle="round" paddingX={1} flexDirection="row" justifyContent="space-between" borderColor="blue">
             <Box>
@@ -44,6 +55,11 @@ export const StatusHeader = ({ provider, model, agentState, interactionMode = 'y
                 <Text color="gray">)</Text>
             </Box>
             <Box>
+                {topToolDisplay && (
+                    <Box marginRight={2}>
+                        <Text color="cyan">{topToolDisplay}</Text>
+                    </Box>
+                )}
                 {totalUsage && totalUsage.total > 0 && (
                     <Box marginRight={2}>
                         <Text color="gray">Tokens: </Text>

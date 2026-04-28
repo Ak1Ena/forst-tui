@@ -22,136 +22,16 @@ import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
-import {HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns} from '@langchain/core/messages';
-import { MemorySaver } from "@langchain/langgraph";
+import { HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns } from '@langchain/core/messages';
+import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
+import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 import { Client } from "langsmith";
 import { Message } from './core/AppContext.js';
+import path from 'path';
+import { GLOBAL_DIR } from './core/ConfigManager.js';
 
-const checkpointer = new MemorySaver();
+const checkpointer = SqliteSaver.fromConnString(path.join(GLOBAL_DIR, 'checkpoints.sqlite'));
 
-/**
- * Rebuilds the LangGraph MemorySaver checkpoint from saved DB messages so the
- * LLM sees full conversation history when a session is loaded or switched.
- */
-const hydrateCheckpointer = async (
-    sessionId: number,
-    messages: Message[],
-    provider: any,
-    plannerMode: boolean
-) => {
-    if (messages.length === 0) return;
-
-    const appWorkflow = createAgentWorkflow(provider, 'yolo', checkpointer, configManager.getSettings().shortTermMemoryLimit);
-    const config = { configurable: { thread_id: sessionId.toString() } };
-
-    // Check if we already have state for this thread to avoid redundant appends (which cause duplicate system prompts)
-    const existingState = await appWorkflow.getState(config);
-    if (existingState.values.messages && existingState.values.messages.length > 0) {
-        return;
-    }
-
-    // Convert DB Message records to LangChain message objects, then sanitize the
-    // sequence so Claude never receives mid-conversation system messages or a broken
-    // user/assistant/tool alternation (which causes a 400 on resume).
-    const raw: any[] = [];
-    for (const msg of messages) {
-        if (msg.role === 'user') {
-            raw.push(new HumanMessage(msg.content));
-        } else if (msg.role === 'assistant') {
-            raw.push(new AIMessage({
-                content: msg.content || '',
-                tool_calls: msg.tool_calls ?? undefined,
-            }));
-        } else if (msg.role === 'tool') {
-            raw.push(new ToolMessage({
-                content: msg.content,
-                tool_call_id: msg.tool_call_id || 'unknown',
-                name: msg.name || 'tool',
-            }));
-        }
-        // skip 'system' rows — they are re-injected as the first message below
-    }
-
-    // Sanitize: Claude requires strict sequencing.
-    // Rules we enforce:
-    //   1. Every `tool` message must be immediately preceded by an `ai` message that
-    //      has tool_calls.  Drop orphaned tool messages.
-    //   2. Consecutive user messages are collapsed — keep only the last one.
-    //   3. The sequence must end with a `human` message so the LLM can reply to it
-    //      when the user sends the next input.  If it ends with `ai` or `tool`, trim
-    //      back to the last human message and everything that follows it.
-    const sanitized: any[] = [];
-    for (let i = 0; i < raw.length; i++) {
-        const msg = raw[i];
-        const type = msg._getType();
-
-        if (type === 'tool') {
-            // Only keep if previous kept message was an ai with tool_calls
-            const prev = sanitized[sanitized.length - 1];
-            if (prev && prev._getType() === 'ai' && (prev as AIMessage).tool_calls?.length) {
-                sanitized.push(msg);
-            }
-            // otherwise discard orphaned tool message
-        } else if (type === 'human') {
-            // Collapse consecutive human messages — keep the last one
-            if (sanitized.length > 0 && sanitized[sanitized.length - 1]._getType() === 'human') {
-                sanitized[sanitized.length - 1] = msg;
-            } else {
-                sanitized.push(msg);
-            }
-        } else {
-            sanitized.push(msg);
-        }
-    }
-
-    // Trim the tail so the sequence is valid for Claude (ends with Human, or ends with a complete AI+Tool turn).
-    // We want to keep as much history as possible, but Claude crashes if it ends on an orphaned tool_use.
-    let trimToIdx = -1;
-    for (let i = sanitized.length - 1; i >= 0; i--) {
-        const msg = sanitized[i];
-        const type = msg._getType();
-        
-        if (type === 'human') {
-            trimToIdx = i;
-            break;
-        }
-        if (type === 'tool') {
-            // A tool result is only valid if preceded by an AI message. 
-            // If we found a tool result at the end, the sequence is likely complete.
-            trimToIdx = i;
-            break;
-        }
-        if (type === 'ai' && !(msg as AIMessage).tool_calls?.length) {
-            // Text-only AI response at the end is fine.
-            trimToIdx = i;
-            break;
-        }
-        // If it's an AI message WITH tool_calls but no tool results followed (since we are iterating backwards),
-        // we keep looking for a safe place to stop.
-    }
-    
-    const trimmed = trimToIdx >= 0 ? sanitized.slice(0, trimToIdx + 1) : [];
-
-    if (trimmed.length === 0) return;
-
-    // H3: Do NOT prepend SystemMessage into checkpointer state.
-    // System prompt is always reconstructed fresh inside callModel — storing it here
-    // wastes one shortTermMemoryLimit slot and causes duplicate injection.
-
-    // Use native filterMessages() to strip any lingering SystemMessages (safer than
-    // manual .filter() — handles all BaseMessage subclasses correctly).
-    const noSystem = filterMessages(trimmed, { excludeTypes: ["system"] });
-
-    // Merge consecutive same-role messages (e.g. back-to-back HumanMessages) into
-    // one before persisting — reduces MemorySaver bloat without losing content.
-    const merged = mergeMessageRuns(noSystem);
-
-    try {
-        await appWorkflow.updateState(config, { messages: merged });
-    } catch (e) {
-        console.warn('[hydrateCheckpointer] updateState failed:', e);
-    }
-};
 
 const ensureString = (content: any): string => {
     if (typeof content === 'string') return content;
@@ -167,6 +47,28 @@ const ensureString = (content: any): string => {
     }
     if (content && typeof content === 'object') return JSON.stringify(content);
     return String(content || '');
+};
+
+/**
+ * Background helper to sync local UI state (like aborted tool calls or task queue updates)
+ * into the persistent LangGraph checkpointer.
+ */
+const syncGraphState = async (
+    sessionId: number,
+    provider: any,
+    interactionMode: any,
+    checkpointer: any,
+    shortTermMemoryLimit: number,
+    payload: { messages?: BaseMessage[], taskQueue?: Task[] }
+) => {
+    if (!provider) return;
+    try {
+        const appWorkflow = createAgentWorkflow(provider, interactionMode, checkpointer, shortTermMemoryLimit);
+        const config = { configurable: { thread_id: sessionId.toString() } };
+        await appWorkflow.updateState(config, payload);
+    } catch (e) {
+        // Silently fail background syncs
+    }
 };
 
 const App = () => {
@@ -273,33 +175,35 @@ const App = () => {
 
                     // Sync the LangGraph checkpointer state as well
                     // We also sync the taskQueue update
-                    (async () => {
-                        try {
-                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
-                            const config = { configurable: { thread_id: sessionId.toString() } };
-                            const updatedQueue = state.taskQueue.map(t => 
-                                t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
-                            );
-                            await appWorkflow.updateState(config, { 
-                                messages: toolMessages,
-                                taskQueue: updatedQueue
-                            });
-                        } catch (e) { /* ignore sync errors */ }
-                    })();
+                    const updatedQueue = state.taskQueue.map(t => 
+                        t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
+                    );
+                    syncGraphState(
+                        sessionId,
+                        activeProvider.instance,
+                        state.interactionMode,
+                        checkpointer,
+                        configManager.getSettings().shortTermMemoryLimit,
+                        { 
+                            messages: toolMessages,
+                            taskQueue: updatedQueue
+                        }
+                    );
 
                     dispatch({ type: 'SET_PENDING_TOOL', payload: null });
                 } else if (inProgressTask) {
                     // Even if no tool call was pending, sync the failed task state
-                    (async () => {
-                        try {
-                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
-                            const config = { configurable: { thread_id: sessionId.toString() } };
-                            const updatedQueue = state.taskQueue.map(t => 
-                                t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
-                            );
-                            await appWorkflow.updateState(config, { taskQueue: updatedQueue });
-                        } catch (e) { /* ignore sync errors */ }
-                    })();
+                    const updatedQueue = state.taskQueue.map(t => 
+                        t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
+                    );
+                    syncGraphState(
+                        sessionId,
+                        activeProvider.instance,
+                        state.interactionMode,
+                        checkpointer,
+                        configManager.getSettings().shortTermMemoryLimit,
+                        { taskQueue: updatedQueue }
+                    );
                 }
 
                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Operation cancelled by user.' } });
@@ -371,6 +275,14 @@ const App = () => {
             if (input === 'l' && key.ctrl) {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
                 dispatch({ type: 'CLEAR_QUEUE' });
+                syncGraphState(
+                    sessionId,
+                    activeProvider.instance,
+                    state.interactionMode,
+                    checkpointer,
+                    configManager.getSettings().shortTermMemoryLimit,
+                    { messages: [new REMOVE_ALL_MESSAGES()] }
+                );
             }
             if (key.upArrow) {
                 setScrollOffset(prev => Math.min(prev + 1, Math.max(0, totalLines - 5)));
@@ -405,15 +317,7 @@ const App = () => {
         const initialMessages = getMessages(Number(currentSid), configManager.getSettings().shortTermMemoryLimit * 2);
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
 
-        // Hydrate LangGraph checkpointer so the LLM has full session history in context
-        if (initialMessages.length > 0 && activeProvider.instance) {
-            hydrateCheckpointer(
-                Number(currentSid),
-                initialMessages,
-                activeProvider.instance,
-                configManager.getSettings().plannerMode
-            );
-        }
+
 
         vm.init();
 
@@ -647,15 +551,6 @@ const App = () => {
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
 
-                        // Hydrate checkpointer so LLM has full history for resumed session
-                        if (msgs.length > 0 && activeProvider.instance) {
-                            hydrateCheckpointer(
-                                targetId,
-                                msgs,
-                                activeProvider.instance,
-                                configManager.getSettings().plannerMode
-                            );
-                        }
 
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${targetId}]` } });
                         return;
@@ -693,6 +588,15 @@ const App = () => {
             if (command === 'clear') {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
                 dispatch({ type: 'CLEAR_QUEUE' });
+                dispatch({ type: 'RESET_STATS' });
+                syncGraphState(
+                    sessionId,
+                    activeProvider.instance,
+                    state.interactionMode,
+                    checkpointer,
+                    configManager.getSettings().shortTermMemoryLimit,
+                    { messages: [new REMOVE_ALL_MESSAGES()] }
+                );
                 return;
             }
             if (command === 'mode') {
@@ -742,9 +646,14 @@ const App = () => {
             configManager.getSettings().shortTermMemoryLimit
         );
         
-        // Sync current task queue into graph state
         const config = {
-            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            configurable: { 
+                thread_id: sessionId.toString(), 
+                plannerMode: configManager.getSettings().plannerMode,
+                onToolCall: (name: string, ms: number) => {
+                    dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
+                }
+            },
             recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: abortControllerRef.current?.signal
         };
@@ -802,7 +711,13 @@ const App = () => {
         abortControllerRef.current = controller;
 
         const config = {
-            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            configurable: { 
+                thread_id: sessionId.toString(), 
+                plannerMode: configManager.getSettings().plannerMode,
+                onToolCall: (name: string, ms: number) => {
+                    dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
+                }
+            },
             recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: controller.signal
         };
@@ -831,7 +746,13 @@ const App = () => {
         abortControllerRef.current = controller;
 
         const config = {
-            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            configurable: { 
+                thread_id: sessionId.toString(), 
+                plannerMode: configManager.getSettings().plannerMode,
+                onToolCall: (name: string, ms: number) => {
+                    dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
+                }
+            },
             recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: controller.signal
         };
@@ -877,15 +798,6 @@ const App = () => {
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
 
-                        // Hydrate checkpointer so LLM has full history for resumed session
-                        if (msgs.length > 0 && activeProvider.instance) {
-                            hydrateCheckpointer(
-                                id,
-                                msgs,
-                                activeProvider.instance,
-                                configManager.getSettings().plannerMode
-                            );
-                        }
 
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
                         setView('chat');
@@ -912,6 +824,7 @@ const App = () => {
                         interactionMode={state.interactionMode}
                         plannerMode={configManager.getSettings().plannerMode}
                         totalUsage={state.totalUsage}
+                        toolStats={state.toolStats}
                     />
                     
                     <Box flexGrow={1} flexDirection="row" marginTop={1}>

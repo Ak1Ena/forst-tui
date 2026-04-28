@@ -6,6 +6,7 @@ import { BaseProvider } from "./providers/BaseProvider.js";
 import { toolRetriever } from "./ToolRetriever.js";
 import { vectorMemory } from "../database/vectorStore.js";
 import { getStaticPrompt, getDynamicContext } from "./Prompts.js";
+import { getCoreMemories } from "../database/coreMemory.js";
 import { type Task, type TaskStatus } from "./AppContext.js";
 
 // ── AgentState ────────────────────────────────────────────────────────────────
@@ -22,9 +23,12 @@ export const AgentState = Annotation.Root({
   }),
 });
 
-// Build the TF-IDF tool index once at module load time.
-// getTools() returns the same registry array every call so this is safe.
-toolRetriever.build(getTools());
+// Build the TF-IDF tool index lazily.
+function ensureToolIndexBuilt(tools: any[]) {
+    if (toolRetriever.getAll().length !== tools.length) {
+        toolRetriever.build(tools);
+    }
+}
 
 // ── Read-only tools whose results can be safely deduplicated ──────────────────
 const CACHEABLE_TOOLS = new Set(['read_files', 'list_files', 'list_directory']);
@@ -56,6 +60,142 @@ function getRetrievalQuery(msgs: BaseMessage[], currentTask?: Task): string {
     return '';
 }
 
+/**
+ * Dual-Query retrieval (Raw + Lightweight Rewrite) with Threshold.
+ */
+async function retrieveRelevantContext(messages: BaseMessage[], taskQueue: Task[]): Promise<string> {
+    const rawQuery = getRetrievalQuery(messages, taskQueue.find(t => t.status === 'in-progress'));
+    if (!rawQuery) return "";
+
+    const queries = [
+        rawQuery,
+        `What past context is relevant to: ${rawQuery}?`
+    ];
+
+    const results = await Promise.all(queries.map(q => vectorMemory.search(q, 5, 0.5)));
+
+    // Flatten, Deduplicate by content, and format
+    const seen = new Set<string>();
+    const uniqueDocs = results.flat().filter(doc => {
+        if (seen.has(doc.pageContent)) return false;
+        seen.add(doc.pageContent);
+        return true;
+    });
+
+    if (uniqueDocs.length === 0) return "";
+
+    return uniqueDocs.map(doc => {
+        const timestamp = doc.metadata.timestamp ? new Date(doc.metadata.timestamp).toLocaleString() : 'Unknown';
+        return `[MEMORIZED TURN - ${timestamp}]\n${doc.pageContent}`;
+    }).join("\n---\n");
+}
+
+/**
+ * Slice history to limit and ensure it starts at a safe boundary (Human message).
+ */
+export function truncateHistory(messages: BaseMessage[], limit: number): BaseMessage[] {
+    const nonSystem = messages.filter(m => m._getType() !== 'system');
+    let sliceIndex = Math.max(0, nonSystem.length - limit);
+
+    while (sliceIndex > 0) {
+        if (nonSystem[sliceIndex]._getType() === 'human') break;
+        sliceIndex--;
+    }
+    return nonSystem.slice(sliceIndex);
+}
+
+/**
+ * Anthropic requires every tool_use to have a corresponding tool_result.
+ * Injects dummy results for orphaned tool calls (e.g. from an aborted run).
+ */
+export function sanitizeForAnthropic(messages: BaseMessage[]): BaseMessage[] {
+    const sanitized: BaseMessage[] = [];
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        sanitized.push(msg);
+
+        if (msg._getType() === 'ai' && (msg as any).tool_calls?.length) {
+            const nextMsg = messages[i + 1];
+            if (!nextMsg || nextMsg._getType() !== 'tool') {
+                const toolCalls = (msg as any).tool_calls;
+                for (const tc of toolCalls) {
+                    sanitized.push(new ToolMessage({
+                        content: "🛑 Operation cancelled by user. Discard this intent and wait for next instructions.",
+                        tool_call_id: tc.id || 'unknown',
+                        name: tc.name || 'unknown'
+                    }));
+                }
+            }
+        }
+    }
+    return sanitized;
+}
+
+/**
+ * Sync task completions from the last assistant message and advance the queue.
+ */
+function syncTaskQueue(messages: BaseMessage[], taskQueue: Task[]): Task[] {
+    let updatedQueue = [...taskQueue];
+    const lastMessage = messages[messages.length - 1];
+    
+    // 1. Sync completions
+    if (lastMessage && lastMessage._getType() === 'ai' && typeof lastMessage.content === 'string') {
+        const content = lastMessage.content;
+        const completedMatches = [...content.matchAll(/COMPLETED:\s*(\S+)/g)];
+        for (const match of completedMatches) {
+            const taskId = match[1].replace(/[^a-zA-Z0-9_-]/g, '');
+            updatedQueue = updatedQueue.map(t =>
+                t.id === taskId ? { ...t, status: 'completed' as TaskStatus } : t
+            );
+        }
+    }
+
+    // 2. Advance the queue
+    const pendingTasks = updatedQueue.filter(t => t.status === 'pending' || t.status === 'in-progress');
+    if (pendingTasks.length > 0 && !pendingTasks.some(t => t.status === 'in-progress')) {
+        const firstPending = pendingTasks[0];
+        updatedQueue = updatedQueue.map(t =>
+            t.id === firstPending.id ? { ...t, status: 'in-progress' as TaskStatus } : t
+        );
+    }
+    
+    return updatedQueue;
+}
+
+/**
+ * TF-IDF search for Core Memories.
+ * Since core_memories is small, we can build a temporary index and search it.
+ */
+function retrieveRelevantMemories(query: string): string {
+    const memories = getCoreMemories();
+    if (memories.length === 0 || !query) return "";
+
+    // Simple keyword matching/scoring for core memories
+    const queryTerms = query.toLowerCase().split(/\W+/).filter(t => t.length > 2);
+    if (queryTerms.length === 0) {
+        // Fallback: if query is too short, return last 5 memories
+        return memories.slice(-5).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
+    }
+
+    const scored = memories.map(m => {
+        const content = m.content.toLowerCase();
+        let score = 0;
+        queryTerms.forEach(term => {
+            if (content.includes(term)) score += 1;
+        });
+        return { memory: m, score };
+    }).filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    if (scored.length === 0) {
+        // Fallback: return last 3 memories
+        return memories.slice(-3).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
+    }
+
+    return scored.map(s => `(${s.memory.category.toUpperCase()}) ${s.memory.content}`).join('\n');
+}
+
 export const createAgentWorkflow = (
   provider: BaseProvider,
   interactionMode: 'approval' | 'auto-accept' | 'yolo',
@@ -63,6 +203,7 @@ export const createAgentWorkflow = (
   shortTermMemoryLimit: number = 12
 ) => {
   const tools = getTools();
+  ensureToolIndexBuilt(tools);
   const model = provider.getModel();
 
   // Pre-build per-tool bound models lazily via a cache so we don't re-bind on every call.
@@ -112,219 +253,75 @@ export const createAgentWorkflow = (
     const plannerMode: boolean = config?.configurable?.plannerMode ?? false;
     const { messages, taskQueue } = state;
 
-    // Clear the dedup cache at the start of each human turn so stale reads
-    // from a previous exchange don't leak into the current one.
+    // --- 0. Dedup Cache Management ---
     const lastHumanIdx = [...messages].reverse().findIndex(m => m._getType() === 'human');
-    if (lastHumanIdx === 0) {
-        // The most-recent message IS the new human turn — fresh request.
-        toolResultCache.clear();
-    }
+    if (lastHumanIdx === 0) toolResultCache.clear();
 
-    // --- 0. Retrieve Relevant Context (Dual-Query + Threshold) ---
-    const rawQuery = getRetrievalQuery(messages, taskQueue.find(t => t.status === 'in-progress'));
-    let relevantContext = "";
+    // --- 1. Retrieval (Core Memories + Conversation RAG) ---
+    const currentTask = taskQueue.find(t => t.status === 'in-progress');
+    const query = getRetrievalQuery(messages, currentTask);
+    
+    const relevantMemories = retrieveRelevantMemories(query);
+    const relevantConversation = await retrieveRelevantContext(messages, taskQueue);
 
-    if (rawQuery) {
-        // Dual query: Raw + Lightweight Rewrite
-        const queries = [
-            rawQuery,
-            `What past context is relevant to: ${rawQuery}?`
-        ];
-
-        const results = await Promise.all(queries.map(q => vectorMemory.search(q, 5, 0.5)));
-
-        // Flatten, Deduplicate by content, and format
-        const seen = new Set<string>();
-        const uniqueDocs = results.flat().filter(doc => {
-            if (seen.has(doc.pageContent)) return false;
-            seen.add(doc.pageContent);
-            return true;
-        });
-
-        if (uniqueDocs.length > 0) {
-            relevantContext = uniqueDocs.map(doc => {
-                const timestamp = doc.metadata.timestamp ? new Date(doc.metadata.timestamp).toLocaleString() : 'Unknown';
-                return `[MEMORIZED TURN - ${timestamp}]\n${doc.pageContent}`;
-            }).join("\n---\n");
-        }
-    }
-
-    // --- 1. Build system prompt from split static + dynamic layers ---
-    // Strip any SystemMessage already in state (they were stored from a previous turn).
-    // We always reconstruct fresh so the static block can be cache-controlled.
-    const nonSystemMessages: BaseMessage[] = messages.filter(m => m._getType() !== 'system');
-
-    // Build dynamic part: memories + RAG context
-    let dynamicParts = getDynamicContext();
-
-    // Inject relevant context into dynamic part
-    if (relevantContext) {
-        dynamicParts += "\n\n[RELEVANT CONVERSATION CONTEXT]\n" + relevantContext + "\n[END CONTEXT]";
-    }
-
-    // Static prompt — stable per session, safe for Anthropic cache_control
-    const staticText = getStaticPrompt(plannerMode);
-
-    // TRUNCATE: Using dynamic limit from settings
-    let sliceIndex = Math.max(0, nonSystemMessages.length - shortTermMemoryLimit);
-
-    // Safety: If we sliced into the middle of a tool sequence (starting with a ToolMessage
-    // or an AIMessage with tool_calls), walk backward until we find a HumanMessage.
-    while (sliceIndex > 0) {
-        const firstMsg = nonSystemMessages[sliceIndex];
-        const type = firstMsg._getType();
-
-        // If it's a Human message, it's a safe place to start.
-        if (type === 'human') break;
-
-        // If it's a Tool message or an AI message with tool calls, we MUST go back further.
-        sliceIndex--;
-    }
-
-    const recentMessages = nonSystemMessages.slice(sliceIndex);
-
-    // Build the system message.
-    // The static block gets a cache_control hint so Anthropic caches it for 5 minutes.
-    // The dynamic block (memories + RAG) is never cached since it changes per-turn.
+    // --- 2. Build Context Blocks (Ordered: Static -> Dynamic) ---
     const systemBlocks: any[] = [
-        {
-            type: "text",
-            text: staticText,
-            cache_control: { type: "ephemeral" }   // Anthropic prompt caching
+        { 
+            type: "text", 
+            text: getStaticPrompt(plannerMode), 
+            cache_control: { type: "ephemeral" } // Anthropic stable prefix caching
         },
     ];
-    if (dynamicParts) {
-        systemBlocks.push({ type: "text", text: dynamicParts });
+
+    const dynamicContext = getDynamicContext(relevantMemories, relevantConversation);
+    if (dynamicContext) {
+        systemBlocks.push({ type: "text", text: dynamicContext });
     }
 
-    const systemMsg = new SystemMessage({ content: systemBlocks });
-    let activeMessages: BaseMessage[] = [systemMsg, ...recentMessages];
+    // --- 3. History Truncation (Recent Messages) ---
+    const recentMessages = truncateHistory(messages, shortTermMemoryLimit);
+    let activeMessages: BaseMessage[] = [new SystemMessage({ content: systemBlocks }), ...recentMessages];
 
-    // --- 0.1 Sanitize for Anthropic: Every tool_use MUST have a tool_result ---
-    // If the sequence ends with an AI message containing tool calls, it means the
-    // previous run was likely interrupted before tools could execute.
-    // We append a "cancelled" result for each to satisfy strict provider requirements.
-    const sanitizedMessages: BaseMessage[] = [];
-    for (let i = 0; i < activeMessages.length; i++) {
-        const msg = activeMessages[i];
-        sanitizedMessages.push(msg);
+    // --- 4. Sanitization (Anthropic Compliance) ---
+    activeMessages = sanitizeForAnthropic(activeMessages);
 
-        if (msg._getType() === 'ai' && (msg as any).tool_calls?.length) {
-            const nextMsg = activeMessages[i + 1];
-            if (!nextMsg || nextMsg._getType() !== 'tool') {
-                // Orphaned tool call detected. Inject dummy results.
-                const toolCalls = (msg as any).tool_calls;
-                for (const tc of toolCalls) {
-                    sanitizedMessages.push(new ToolMessage({
-                        content: "🛑 Operation cancelled by user. Discard this intent and wait for next instructions.",
-                        tool_call_id: tc.id || 'unknown',
-                        name: tc.name || 'unknown'
-                    }));
-                }
-            }
-        }
-    }
-    activeMessages = sanitizedMessages;
+    // --- 5. Task Queue Sync & Injection ---
+    let updatedQueue = syncTaskQueue(activeMessages, taskQueue);
+    const syncCurrentTask = updatedQueue.find(t => t.status === 'in-progress');
 
-    // --- 1. Sync task completions from the last assistant message ---
-    let updatedQueue = [...taskQueue];
-    const lastMessage = activeMessages[activeMessages.length - 1];
-    if (lastMessage && lastMessage._getType() === 'ai' && typeof lastMessage.content === 'string') {
-        const content = lastMessage.content;
-        const completedMatches = [...content.matchAll(/COMPLETED:\s*(\S+)/g)];
-        for (const match of completedMatches) {
-            const taskId = match[1].replace(/[^a-zA-Z0-9_-]/g, '');
-            updatedQueue = updatedQueue.map(t =>
-                t.id === taskId ? { ...t, status: 'completed' as TaskStatus } : t
-            );
-        }
-    }
-
-    // --- 2. Advance the queue: mark next pending as in-progress ---
-    const pendingTasks = updatedQueue.filter(t => t.status === 'pending' || t.status === 'in-progress');
-    if (pendingTasks.length > 0 && !pendingTasks.some(t => t.status === 'in-progress')) {
-        const firstPending = pendingTasks[0];
-        updatedQueue = updatedQueue.map(t =>
-            t.id === firstPending.id ? { ...t, status: 'in-progress' as TaskStatus } : t
-        );
-    }
-
-    // --- 3. Inject ONLY the current in-progress task into the system prompt ---
-    const currentTask = updatedQueue.find(t => t.status === 'in-progress');
-
-    if (currentTask && currentTask.status !== 'failed') {
+    if (syncCurrentTask && syncCurrentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
-        const taskContext =
-            `[CURRENT TASK] (ID: ${currentTask.id})\n${currentTask.description}\n\n` +
+        const taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n\n` +
             (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
-            `When you finish this task, write "COMPLETED: ${currentTask.id}" in your response.`;
+            `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
 
-        const firstMsg = activeMessages[0];
-        if (firstMsg && firstMsg._getType() === 'system') {
-            // Append to the system message (dynamic text block, not cached)
-            const existingContent = firstMsg.content;
-            if (Array.isArray(existingContent)) {
-                // Check if task context already injected
-                const hasTask = existingContent.some((b: any) => typeof b.text === 'string' && b.text.includes(`[CURRENT TASK] (ID: ${currentTask.id})`));
-                if (!hasTask) {
-                    const newBlocks = [...existingContent, { type: "text", text: taskContext }];
-                    activeMessages[0] = new SystemMessage({ content: newBlocks });
-                }
-            } else {
-                const existing = typeof existingContent === 'string' ? existingContent : '';
-                if (!existing.includes(`[CURRENT TASK] (ID: ${currentTask.id})`)) {
-                    activeMessages[0] = new SystemMessage(`${existing}\n\n${taskContext}`);
-                }
-            }
+        const firstMsg = activeMessages[0] as SystemMessage;
+        if (Array.isArray(firstMsg.content)) {
+            activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: taskContext }] });
         } else {
-            activeMessages = [new SystemMessage(taskContext), ...activeMessages];
+            activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${taskContext}`);
         }
     }
 
-    // --- 4. Smart tool selection via TF-IDF retrieval ---
-    //
-    // The Anthropic endpoint REQUIRES toolConfig whenever any tool/toolResult
-    // messages exist in history — so we always send tools in that case.
-    //
-    // For fresh turns with no tool history:
-    //   - Retrieve top-3 relevant tools via TF-IDF against the current query
-    //   - If nothing matches, inject only the tool catalog (names only) so the
-    //     model knows tools exist without paying full schema cost
+    // --- 6. Tool Selection & Model Binding (Top-K Tools / Catalog) ---
     const toolHistory = hasToolHistory(activeMessages);
     let chosenModel: any;
 
     if (toolHistory) {
-        // Must send full tools — Anthropic requires it when tool messages exist
         chosenModel = getModelForTools(tools);
     } else {
-        const query = getRetrievalQuery(activeMessages, currentTask);
-        const retrieved = query ? toolRetriever.search(query, 3) : [];
-
-        if (retrieved.length > 0) {
-            // Bind only the retrieved subset
-            chosenModel = getModelForTools(retrieved.map(e => e.tool));
+        const retrievedTools = query ? toolRetriever.search(query, 3) : [];
+        if (retrievedTools.length > 0) {
+            chosenModel = getModelForTools(retrievedTools.map(e => e.tool));
         } else {
-            // Fallback: no tools bound, inject catalog as a system note so the
-            // model can reference tool names without any schema overhead
             chosenModel = model;
             const catalog = toolRetriever.getCatalog();
             if (catalog) {
-                const firstMsg = activeMessages[0];
-                if (firstMsg && firstMsg._getType() === 'system') {
-                    const existingContent = firstMsg.content;
-                    if (Array.isArray(existingContent)) {
-                        const hasCatalog = existingContent.some((b: any) => typeof b.text === 'string' && b.text.includes('[AVAILABLE TOOLS]'));
-                        if (!hasCatalog) {
-                            activeMessages[0] = new SystemMessage({ content: [...existingContent, { type: "text", text: catalog }] });
-                        }
-                    } else {
-                        const existing = typeof existingContent === 'string' ? existingContent : '';
-                        if (!existing.includes('[AVAILABLE TOOLS]')) {
-                            activeMessages[0] = new SystemMessage(`${existing}\n\n${catalog}`);
-                        }
-                    }
+                const firstMsg = activeMessages[0] as SystemMessage;
+                if (Array.isArray(firstMsg.content)) {
+                    activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: catalog }] });
                 } else {
-                    activeMessages = [new SystemMessage(catalog), ...activeMessages];
+                    activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${catalog}`);
                 }
             }
         }
@@ -361,27 +358,32 @@ export const createAgentWorkflow = (
                 });
             }
 
+            const start = Date.now();
+            let result: any;
+            let isFromCache = false;
+
             // Dedup cache — only for safe read-only tools
             if (CACHEABLE_TOOLS.has(tc.name)) {
                 const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
                 if (toolResultCache.has(cacheKey)) {
-                    return new ToolMessage({
-                        content: toolResultCache.get(cacheKey)!,
-                        tool_call_id: tc.id || 'unknown',
-                        name: tc.name,
-                    });
+                    result = toolResultCache.get(cacheKey)!;
+                    isFromCache = true;
+                } else {
+                    result = await tool.invoke(tc.args, config);
+                    toolResultCache.set(cacheKey, result);
                 }
-                const result = await tool.invoke(tc.args, config);
-                toolResultCache.set(cacheKey, result);
-                return new ToolMessage({
-                    content: result,
-                    tool_call_id: tc.id || 'unknown',
-                    name: tc.name,
-                });
+            } else {
+                // Non-cacheable: invoke directly
+                result = await tool.invoke(tc.args, config);
             }
 
-            // Non-cacheable: invoke directly
-            const result = await tool.invoke(tc.args, config);
+            const duration = isFromCache ? 0 : (Date.now() - start);
+            if (config?.configurable?.onToolCall) {
+                try {
+                    config.configurable.onToolCall(tc.name, duration);
+                } catch (e) { /* ignore */ }
+            }
+
             return new ToolMessage({
                 content: typeof result === 'string' ? result : JSON.stringify(result),
                 tool_call_id: tc.id || 'unknown',

@@ -63,12 +63,16 @@ export const saveMessage = (sessionId: number, message: Message, provider?: stri
 };
 
 export const getMessages = (sessionId: number, limit: number = 100): Message[] => {
+    // Ensure inputs are integers for SQLite
+    const safeSid = Math.floor(Number(sessionId) || 0);
+    const safeLimit = Math.floor(Number(limit) || 100);
+
     const stmt = db.prepare(`
         SELECT role, content, tool_calls, tool_call_id, name, args FROM messages
         WHERE session_id = ?
         ORDER BY id ASC LIMIT ?
     `);
-    const rows = stmt.all(sessionId, limit) as any[];
+    const rows = stmt.all(safeSid, safeLimit) as any[];
 
     // H4: Warn when the query silently hits the cap — history may be incomplete
     if (rows.length === limit) {

@@ -5,13 +5,13 @@ import path from "path";
 
 export const readFilesTool = new DynamicStructuredTool({
     name: "read_files",
-    description: "Reads the content of one or more files. Use for source code or docs. Supports line ranges. For very large files, always use line ranges to avoid hitting token limits.",
+    description: "Reads the content of multiple files in a single turn. To save tokens and minimize turns, ALWAYS group multiple files into a single call instead of calling this tool repeatedly. Supports line ranges per file.",
     schema: z.object({
         files: z.array(z.object({
-            filePath: z.string().describe("Path to the file"),
+            filePath: z.string().describe("Relative path to the file"),
             startLine: z.number().int().min(1).optional().describe("Start line (1-based)"),
             endLine: z.number().int().min(1).optional().describe("End line (1-based, inclusive)")
-        })).describe("List of files to read"),
+        })).describe("List of files to read in bulk"),
     }),
     func: async ({ files }) => {
         const results = [];
