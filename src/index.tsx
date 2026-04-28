@@ -16,7 +16,7 @@ import { SettingsView } from './components/SettingsView.js';
 import { SessionListView } from './components/SessionListView.js';
 import { GeminiProvider } from './core/providers/GeminiProvider.js';
 import { saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions, updateSessionName, deleteSession } from './database/messages.js';
-import {VectorMemory} from './database/vectorStore.js';
+import {vectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
@@ -41,7 +41,7 @@ const hydrateCheckpointer = async (
 ) => {
     if (messages.length === 0) return;
 
-    const appWorkflow = createAgentWorkflow(provider, 'yolo', checkpointer);
+    const appWorkflow = createAgentWorkflow(provider, 'yolo', checkpointer, configManager.getSettings().shortTermMemoryLimit);
     const config = { configurable: { thread_id: sessionId.toString() } };
 
     // Check if we already have state for this thread to avoid redundant appends (which cause duplicate system prompts)
@@ -202,7 +202,7 @@ const App = () => {
         }
     });
 
-    const [vectorMemory, setVectorMemory] = useState(() => new VectorMemory(activeProvider.config?.apiKey || ''));
+    const [vm] = useState(() => vectorMemory);
 
     const totalLines = useMemo(() => {
         let count = 0;
@@ -268,7 +268,7 @@ const App = () => {
                     // We also sync the taskQueue update
                     (async () => {
                         try {
-                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
                             const config = { configurable: { thread_id: sessionId.toString() } };
                             const updatedQueue = state.taskQueue.map(t => 
                                 t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
@@ -285,7 +285,7 @@ const App = () => {
                     // Even if no tool call was pending, sync the failed task state
                     (async () => {
                         try {
-                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
                             const config = { configurable: { thread_id: sessionId.toString() } };
                             const updatedQueue = state.taskQueue.map(t => 
                                 t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
@@ -319,9 +319,7 @@ const App = () => {
                                 config,
                                 error: null
                             });
-                            const newVM = new VectorMemory(config.apiKey || '');
-                            newVM.init();
-                            setVectorMemory(newVM);
+                            vm.init();
                         }
                     } catch (e: any) {
                         const errorMsg = e?.error?.message || e?.message || String(e);
@@ -410,7 +408,7 @@ const App = () => {
             );
         }
 
-        vectorMemory.init();
+        vm.init();
 
         heartbeat.registerTask(systemMonitorTask);
         heartbeat.enableTask('system-monitor');
@@ -428,11 +426,12 @@ const App = () => {
             heartbeat.off('task-result', handleResult);
             heartbeat.disableTask('system-monitor');
         };
-    }, [vectorMemory]);
+    }, [vm]);
 
-    const processStream = useCallback(async (stream: any, sessionId: number) => {
+    const processStream = useCallback(async (stream: any, sessionId: number, userMessageText?: string) => {
+        let accumulatedAssistantContent = "";
         try {
-            // If in planner mode and we have pending tasks, mark the first one as in-progress
+            // ... (rest of logic before loop)
             if (configManager.getSettings().plannerMode && state.taskQueue.length > 0) {
                 const firstPending = state.taskQueue.find(t => t.status === 'pending');
                 if (firstPending && !state.taskQueue.some(t => t.status === 'in-progress')) {
@@ -489,7 +488,7 @@ const App = () => {
                         }
 
                         if (role === 'assistant' && formattedMsg.content) {
-                            await vectorMemory.addMessage(formattedMsg.content, { role: 'assistant', timestamp: Date.now(), sessionId });
+                            accumulatedAssistantContent += (accumulatedAssistantContent ? "\n" : "") + formattedMsg.content;
                             
                             // Task Parsing logic
                             if (formattedMsg.content.includes('PLAN:')) {
@@ -524,7 +523,24 @@ const App = () => {
                 }
             }
 
-            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+            // At the end of the stream, embed the exchange pair with context
+            if (userMessageText && accumulatedAssistantContent) {
+                // Get immediate prior context for the overlap window (+1/-1 adjacent pairs)
+                // We take the last 2 messages before this exchange
+                const priorMsgs = state.messages.slice(-2);
+                const priorContext = priorMsgs.map(m => `${m.role.toUpperCase()}: ${ensureString(m.content)}`).join("\n");
+                
+                const fullChunk = (priorContext ? `--- PRIOR CONTEXT ---\n${priorContext}\n--- CURRENT TURN ---\n` : "") +
+                                `USER: ${userMessageText}\nASSISTANT: ${accumulatedAssistantContent}`;
+                
+                await vm.addMessage(fullChunk, { 
+                    role: 'exchange', 
+                    timestamp: Date.now(), 
+                    sessionId 
+                });
+            }
+
+            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
             const config = { configurable: { thread_id: sessionId.toString() } };
             
             // Sync current task queue into graph state before checking
@@ -685,7 +701,7 @@ const App = () => {
         let userMsg = { role: 'user' as const, content: text };
         dispatch({ type: 'ADD_MESSAGE', payload: userMsg });
         saveMessage(sessionId, userMsg);
-        await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
+        await vm.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
         // Auto-rename session if it's the first message
         if (state.messages.length === 0) {
@@ -707,7 +723,8 @@ const App = () => {
         const appWorkflow = createAgentWorkflow(
             activeProvider.instance, 
             state.interactionMode,
-            checkpointer
+            checkpointer,
+            configManager.getSettings().shortTermMemoryLimit
         );
         
         // Sync current task queue into graph state
@@ -749,7 +766,7 @@ const App = () => {
 
         try {
             const stream = await appWorkflow.stream({ messages: inputMessages }, config);
-            await processStream(stream, sessionId);
+            await processStream(stream, sessionId, text);
         } catch (error: any) {
             if (error?.name === 'AbortError') {
                 // Handled in useInput and processStream
@@ -764,7 +781,7 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
         
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -776,8 +793,9 @@ const App = () => {
         };
 
         try {
+            const lastUserMsg = [...state.messages].reverse().find(m => m.role === 'user')?.content || "";
             const stream = await appWorkflow.stream(null, config);
-            await processStream(stream, sessionId);
+            await processStream(stream, sessionId, ensureString(lastUserMsg));
         } catch (error: any) {
             if (error?.name === 'AbortError') {
                 // Handled in useInput and processStream
@@ -792,7 +810,7 @@ const App = () => {
         
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -816,8 +834,9 @@ const App = () => {
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
         try {
+            const lastUserMsg = [...state.messages].reverse().find(m => m.role === 'user')?.content || "";
             const stream = await appWorkflow.stream(null, config);
-            await processStream(stream, sessionId);
+            await processStream(stream, sessionId, ensureString(lastUserMsg));
         } catch (error: any) {
             if (error?.name === 'AbortError') {
                 // Handled in useInput and processStream

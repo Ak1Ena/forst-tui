@@ -16,6 +16,7 @@ export interface AppSettings {
     defaultProvider: string;
     theme: string;
     recursionLimit: number;
+    shortTermMemoryLimit: number;
     interactionMode: 'approval' | 'auto-accept' | 'yolo';
     plannerMode: boolean;
     providers: ProviderConfig[];
@@ -36,6 +37,7 @@ const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',
     theme: 'default',
     recursionLimit: 50,
+    shortTermMemoryLimit: 12,
     interactionMode: 'yolo',
     plannerMode: true,
     providers: [
