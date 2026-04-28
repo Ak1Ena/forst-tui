@@ -26,6 +26,7 @@ export type TokenUsage = {
     input: number;
     output: number;
     total: number;
+    cached: number;  // tokens served from provider cache (Anthropic / OpenAI)
 };
 
 interface State {
@@ -59,7 +60,7 @@ const initialState: State = {
     activeTools: [],
     interactionMode: 'yolo',
     taskQueue: [],
-    totalUsage: { input: 0, output: 0, total: 0 }
+    totalUsage: { input: 0, output: 0, total: 0, cached: 0 }
 };
 
 const AppContext = createContext<{
@@ -98,11 +99,12 @@ function appReducer(state: State, action: Action): State {
             const newUsage = {
                 input: state.totalUsage.input + (action.payload.input || 0),
                 output: state.totalUsage.output + (action.payload.output || 0),
-                total: state.totalUsage.total + (action.payload.total || 0)
+                total: state.totalUsage.total + (action.payload.total || 0),
+                cached: state.totalUsage.cached + (action.payload.cached || 0)
             };
             return { ...state, totalUsage: newUsage };
         case 'RESET_USAGE':
-            return { ...state, totalUsage: { input: 0, output: 0, total: 0 } };
+            return { ...state, totalUsage: { input: 0, output: 0, total: 0, cached: 0 } };
         default:
             return state;
     }

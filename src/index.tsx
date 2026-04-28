@@ -134,15 +134,13 @@ const hydrateCheckpointer = async (
 
     if (trimmed.length === 0) return;
 
-    const langchainMessages: any[] = [
-        new SystemMessage(getSystemPrompt(plannerMode)),
-        ...trimmed,
-    ];
-
+    // H3: Do NOT prepend SystemMessage into checkpointer state.
+    // System prompt is always reconstructed fresh inside callModel — storing it here
+    // wastes one shortTermMemoryLimit slot and causes duplicate injection.
     try {
-        await appWorkflow.updateState(config, { messages: langchainMessages });
-    } catch {
-        // Non-fatal: if hydration fails the agent will still work, just without history in LLM context
+        await appWorkflow.updateState(config, { messages: trimmed });
+    } catch (e) {
+        console.warn('[hydrateCheckpointer] updateState failed:', e);
     }
 };
 
@@ -395,7 +393,7 @@ const App = () => {
         setSessionList(getSessions());
         dispatch({ type: 'RESET_USAGE' });
         dispatch({ type: 'SET_INTERACTION_MODE', payload: configManager.getSettings().interactionMode as any });
-        const initialMessages = getMessages(Number(currentSid));
+        const initialMessages = getMessages(Number(currentSid), configManager.getSettings().shortTermMemoryLimit * 2);
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
 
         // Hydrate LangGraph checkpointer so the LLM has full session history in context
@@ -453,12 +451,20 @@ const App = () => {
                         // Extract token usage if available
                         const usage = (msg as any).usage_metadata || (msg as any).additional_kwargs?.usage || (msg as any).response_metadata?.usage;
                         if (usage) {
-                            dispatch({ 
-                                type: 'UPDATE_USAGE', 
+                            // Anthropic: cache_read_input_tokens / cache_creation_input_tokens
+                            // OpenAI: usage.prompt_tokens_details.cached_tokens
+                            const cachedTokens =
+                                usage.cache_read_input_tokens ||
+                                (usage.prompt_tokens_details?.cached_tokens) ||
+                                0;
+
+                            dispatch({
+                                type: 'UPDATE_USAGE',
                                 payload: {
                                     input: usage.input_tokens || usage.prompt_tokens || 0,
                                     output: usage.output_tokens || usage.completion_tokens || 0,
-                                    total: usage.total_tokens || 0
+                                    total: usage.total_tokens || 0,
+                                    cached: cachedTokens,
                                 }
                             });
                         }
@@ -729,8 +735,8 @@ const App = () => {
         
         // Sync current task queue into graph state
         const config = {
-            configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: abortControllerRef.current?.signal
         };
 
@@ -787,8 +793,8 @@ const App = () => {
         abortControllerRef.current = controller;
 
         const config = {
-            configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: controller.signal
         };
 
@@ -816,8 +822,8 @@ const App = () => {
         abortControllerRef.current = controller;
 
         const config = {
-            configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            configurable: { thread_id: sessionId.toString(), plannerMode: configManager.getSettings().plannerMode },
+            recursionLimit: configManager.getSettings().recursionLimit || 15,
             signal: controller.signal
         };
 

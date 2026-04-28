@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { addCoreMemory, deleteCoreMemory, getCoreMemories } from '../../database/coreMemory.js';
 import { vectorMemory } from '../../database/vectorStore.js';
+import { invalidatePromptCache } from '../../core/Prompts.js';
 
 export const memoryTool = new DynamicStructuredTool({
     name: 'core_memory',
@@ -28,12 +29,16 @@ export const memoryTool = new DynamicStructuredTool({
             
             if (action === 'add') {
                 if (!category || !content) return 'Error: category and content are required to add a memory.';
-                return addCoreMemory(category, content);
+                const result = addCoreMemory(category, content);
+                invalidatePromptCache();
+                return result;
             }
-            
+
             if (action === 'delete') {
                 if (id === undefined) return 'Error: id is required to delete a memory.';
-                return deleteCoreMemory(id);
+                const result = deleteCoreMemory(id);
+                invalidatePromptCache();
+                return result;
             }
             
             return `Unknown action: ${action}`;

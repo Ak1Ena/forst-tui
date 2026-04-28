@@ -53,6 +53,12 @@ export const StatusHeader = ({ provider, model, agentState, interactionMode = 'y
                         <Text color="gray">o (</Text>
                         <Text color="yellow">{totalUsage.total}</Text>
                         <Text color="gray">)</Text>
+                        {totalUsage.cached > 0 && (
+                            <>
+                                <Text color="gray"> | </Text>
+                                <Text color="cyan">💾 {totalUsage.cached} cached</Text>
+                            </>
+                        )}
                     </Box>
                 )}
                 <Box marginRight={2}>

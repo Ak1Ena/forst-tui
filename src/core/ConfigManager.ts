@@ -36,7 +36,7 @@ const CONFIG_PATH = path.join(GLOBAL_DIR, 'settings.config.json');
 const DEFAULT_CONFIG: AppSettings = {
     defaultProvider: 'gemini-default',
     theme: 'default',
-    recursionLimit: 50,
+    recursionLimit: 15,
     shortTermMemoryLimit: 12,
     interactionMode: 'yolo',
     plannerMode: true,
