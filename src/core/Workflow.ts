@@ -139,7 +139,7 @@ export const createAgentWorkflow = (
                 const toolCalls = (msg as any).tool_calls;
                 for (const tc of toolCalls) {
                     sanitizedMessages.push(new ToolMessage({
-                        content: "🛑 Operation cancelled by user. Do not resume.",
+                        content: "🛑 Operation cancelled by user. Discard this intent and wait for next instructions.",
                         tool_call_id: tc.id || 'unknown',
                         name: tc.name || 'unknown'
                     }));

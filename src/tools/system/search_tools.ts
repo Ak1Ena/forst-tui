@@ -4,7 +4,7 @@ import { toolRetriever } from "../../core/ToolRetriever.js";
 
 export const searchToolsTool = new DynamicStructuredTool({
     name: 'search_tools',
-    description: 'Search for available tools and their descriptions. Use this when you are unsure if a tool exists for a specific task or if a previous tool call was refused because it was "out of scope".',
+    description: 'Search for available tools and their descriptions. Use this only when you are unsure which tool to use for a specific new task.',
     schema: z.object({
         query: z.string().describe('The keyword or description of the task you want to perform.'),
     }),

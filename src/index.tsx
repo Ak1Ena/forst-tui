@@ -250,7 +250,7 @@ const App = () => {
                     for (const tc of state.pendingToolCall) {
                         const toolMsg: Message = {
                             role: 'tool',
-                            content: '🛑 Operation cancelled by user. Do not resume.',
+                            content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
                             tool_call_id: tc.id,
                             name: tc.name
                         };
@@ -258,7 +258,7 @@ const App = () => {
                         saveMessage(sessionId, toolMsg);
                         
                         toolMessages.push(new ToolMessage({
-                            content: '🛑 Operation cancelled by user. Do not resume.',
+                            content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
                             tool_call_id: tc.id,
                             name: tc.name
                         }));
