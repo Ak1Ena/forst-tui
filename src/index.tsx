@@ -44,6 +44,12 @@ const hydrateCheckpointer = async (
     const appWorkflow = createAgentWorkflow(provider, 'yolo', checkpointer);
     const config = { configurable: { thread_id: sessionId.toString() } };
 
+    // Check if we already have state for this thread to avoid redundant appends (which cause duplicate system prompts)
+    const existingState = await appWorkflow.getState(config);
+    if (existingState.values.messages && existingState.values.messages.length > 0) {
+        return;
+    }
+
     // Convert DB Message records to LangChain message objects, then sanitize the
     // sequence so Claude never receives mid-conversation system messages or a broken
     // user/assistant/tool alternation (which causes a 400 on resume).
@@ -594,7 +600,8 @@ const App = () => {
         // Sync current task queue into graph state
         const config = {
             configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50
+            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            signal: abortControllerRef.current?.signal
         };
         await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
 
@@ -618,9 +625,14 @@ const App = () => {
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
         const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+        
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const config = {
             configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50
+            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            signal: controller.signal
         };
 
         const stream = await appWorkflow.stream(null, config);
@@ -633,9 +645,14 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
         const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const config = {
             configurable: { thread_id: sessionId.toString() },
-            recursionLimit: configManager.getSettings().recursionLimit || 50
+            recursionLimit: configManager.getSettings().recursionLimit || 50,
+            signal: controller.signal
         };
 
         const toolCalls = state.pendingToolCall;

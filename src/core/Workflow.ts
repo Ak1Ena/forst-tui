@@ -100,12 +100,32 @@ export const createAgentWorkflow = (
   };
 
   // Define the function that calls the model
-  const callModel = async (state: typeof AgentState.State) => {
+  const callModel = async (state: typeof AgentState.State, config?: any) => {
     const { messages, taskQueue } = state;
+
+    // --- 0. Sanitize messages for Anthropic/strict providers ---
+    // Anthropic requires that system messages ONLY appear at the very beginning.
+    // We consolidate all system messages into one to avoid "System messages are only permitted as the first passed message" errors.
+    let systemContent = "";
+    const nonSystemMessages: BaseMessage[] = [];
+    
+    for (const m of messages) {
+        if (m._getType() === 'system') {
+            const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+            if (systemContent) systemContent += "\n\n";
+            systemContent += content;
+        } else {
+            nonSystemMessages.push(m);
+        }
+    }
+    
+    let activeMessages: BaseMessage[] = systemContent 
+        ? [new SystemMessage(systemContent), ...nonSystemMessages]
+        : nonSystemMessages;
 
     // --- 1. Sync task completions from the last assistant message ---
     let updatedQueue = [...taskQueue];
-    const lastMessage = messages[messages.length - 1];
+    const lastMessage = activeMessages[activeMessages.length - 1];
     if (lastMessage && lastMessage._getType() === 'ai' && typeof lastMessage.content === 'string') {
         const content = lastMessage.content;
         const completedMatches = [...content.matchAll(/COMPLETED:\s*(\S+)/g)];
@@ -127,7 +147,6 @@ export const createAgentWorkflow = (
     }
 
     // --- 3. Inject ONLY the current in-progress task into the system prompt ---
-    let activeMessages = [...messages];
     const currentTask = updatedQueue.find(t => t.status === 'in-progress');
 
     if (currentTask) {
@@ -185,7 +204,7 @@ export const createAgentWorkflow = (
         }
     }
 
-    const response = await chosenModel.invoke(activeMessages);
+    const response = await chosenModel.invoke(activeMessages, config);
     return {
         messages: [response],
         taskQueue: updatedQueue,

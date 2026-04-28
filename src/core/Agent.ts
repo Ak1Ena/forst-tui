@@ -11,9 +11,9 @@ export class ForstAgent {
         // Simplified initialization for prototype
     }
 
-    async run(input: string, onUpdate: (chunk: string) => void) {
+    async run(input: string, onUpdate: (chunk: string) => void, signal?: AbortSignal) {
         onUpdate("Thinking...");
-        const response = await this.provider.chat([{ role: 'user', content: input }], getTools());
+        const response = await this.provider.chat([{ role: 'user', content: input }], getTools(), signal);
         return response.content;
     }
 }
