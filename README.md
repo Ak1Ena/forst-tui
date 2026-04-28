@@ -47,7 +47,7 @@ If you see an `EACCES` or "permission denied" error during global installation:
 - **Dynamic Configuration**: Add and switch providers in real-time via the Settings view (**Ctrl+S**).
 
 ### 🛠️ Advanced Tool System
-- **System Tools**: Run shell commands, list files, read files, and write/edit code.
+- **System Tools**: Run shell commands, list files, read files (with line-range support), and write/edit code.
 - **File Editing**: The `edit_file` tool can create, insert, replace, or delete lines in files — auto-creates missing directories and returns a preview of changes.
 - **Vim Integration**: Use `/code <path>` to open files in `vim` directly from the chat.
 - **Web Tools**: Search the web via DuckDuckGo.
@@ -68,13 +68,20 @@ If you see an `EACCES` or "permission denied" error during global installation:
 - **Cross-session Memory**: Store persistent facts about yourself, the user, or the world using the `core_memory` tool.
 - **Categorized**: Memories are tagged as `ai`, `user`, or `world` for organized retrieval.
 - **SQLite-backed**: Stored in `~/.forst-tui/core_memory.db` — survives restarts and reinstalls.
-- **Full CRUD**: The AI can `add`, `list`, and `delete` individual memory entries by ID.
+- **Full CRUD**: The AI can `add`, `list`, `delete`, and `search` individual memory entries.
 
   | Action | Description |
   |--------|-------------|
   | `add`  | Store a new fact with a category |
   | `list` | Retrieve all stored memories |
   | `delete` | Remove a memory by its ID |
+  | `search` | Semantic search over conversation history |
+
+### 🔍 Contextual Retrieval (RAG)
+- **Local Embeddings**: Uses a locally downloaded `bge-m3` model for fully offline semantic search.
+- **FAISS Vector Store**: Efficient similarity search over long conversation histories.
+- **Automatic Context Injection**: Relevant past conversation turns are injected into the system prompt automatically.
+- **Progress Reporting**: Visual download progress bar shown when the embedding model is first installed.
 
 ### 💾 Persistent Memory & Global Storage
 - **Global Settings**: Configuration, history, skills, and memory are stored in **`~/.forst-tui/`**.
@@ -177,6 +184,17 @@ npm test
 # Rebuild native modules (after Node version change)
 npm run rebuild
 ```
+
+---
+
+## 📦 Changelog
+
+### v0.2.5
+- Added line-range support and output limiting for the `read_files` tool
+- Improved model download script with progress reporting and visual progress bar
+- Added `postinstall` script to pre-download the embedding model on install
+- Implemented local `bge-m3` embeddings and contextual retrieval (RAG) system
+- Added `search` action to `core_memory` for semantic search over conversation history
 
 ---
 
