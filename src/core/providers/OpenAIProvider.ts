@@ -8,8 +8,9 @@ export class OpenAIProvider extends BaseProvider {
 
     constructor(options: ProviderOptions) {
         super(options);
+        const apiKey = options.authType === 'oauth' ? options.accessToken : options.apiKey;
         this.model = new ChatOpenAI({
-            apiKey: options.apiKey,
+            apiKey: apiKey,
             modelName: options.model,
             configuration: {
                 baseURL: options.baseUrl,

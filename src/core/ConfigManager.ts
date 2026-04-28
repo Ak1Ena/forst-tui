@@ -5,8 +5,12 @@ import os from 'os';
 export interface ProviderConfig {
     id: string;
     name: string;
-    type: 'openai' | 'gemini' | 'ollama' | 'openrouter' | string;
+    type: 'openai' | 'gemini' | 'anthropic' | 'ollama' | 'openrouter' | string;
     apiKey?: string;
+    accessToken?: string;
+    refreshToken?: string;
+    tokenExpiry?: number;
+    authType?: 'apiKey' | 'oauth';
     baseUrl?: string;
     model: string;
     enabled: boolean;

@@ -8,9 +8,12 @@ export class GeminiProvider extends BaseProvider {
 
     constructor(options: ProviderOptions) {
         super(options);
+        const apiKey = options.authType === 'oauth' ? undefined : options.apiKey;
         this.model = new ChatGoogleGenerativeAI({
-            apiKey: options.apiKey,
+            apiKey: apiKey,
             model: options.model || "gemini-pro",
+            // If OAuth is used, we might need to pass it via custom headers or use VertexAI
+            // For now, let's assume standard Gemini API with potentially a token if supported
         });
     }
 
