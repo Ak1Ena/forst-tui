@@ -112,13 +112,17 @@ export const createAgentWorkflow = (
     for (const m of messages) {
         if (m._getType() === 'system') {
             const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            if (systemContent) systemContent += "\n\n";
-            systemContent += content;
+            // Only add if not already part of the accumulated system content to prevent bloat
+            if (!systemContent.includes(content)) {
+                if (systemContent) systemContent += "\n\n";
+                systemContent += content;
+            }
         } else {
             nonSystemMessages.push(m);
         }
     }
     
+    // Ensure we don't end up with an empty message list if we only have a system message
     let activeMessages: BaseMessage[] = systemContent 
         ? [new SystemMessage(systemContent), ...nonSystemMessages]
         : nonSystemMessages;
@@ -185,7 +189,9 @@ export const createAgentWorkflow = (
         const firstMsg = activeMessages[0];
         if (firstMsg && firstMsg._getType() === 'system') {
             const existing = typeof firstMsg.content === 'string' ? firstMsg.content : '';
-            activeMessages[0] = new SystemMessage(`${existing}\n\n${taskContext}`);
+            if (!existing.includes(`[CURRENT TASK] (ID: ${currentTask.id})`)) {
+                activeMessages[0] = new SystemMessage(`${existing}\n\n${taskContext}`);
+            }
         } else {
             activeMessages = [new SystemMessage(taskContext), ...activeMessages];
         }
@@ -222,7 +228,9 @@ export const createAgentWorkflow = (
                 const firstMsg = activeMessages[0];
                 if (firstMsg && firstMsg._getType() === 'system') {
                     const existing = typeof firstMsg.content === 'string' ? firstMsg.content : '';
-                    activeMessages[0] = new SystemMessage(`${existing}\n\n${catalog}`);
+                    if (!existing.includes('[AVAILABLE TOOLS]')) {
+                        activeMessages[0] = new SystemMessage(`${existing}\n\n${catalog}`);
+                    }
                 } else {
                     activeMessages = [new SystemMessage(catalog), ...activeMessages];
                 }
