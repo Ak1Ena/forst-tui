@@ -6,6 +6,7 @@ import { BaseProvider } from "./providers/BaseProvider.js";
 import { toolRetriever } from "./ToolRetriever.js";
 import { vectorMemory } from "../database/vectorStore.js";
 import { getStaticPrompt, getDynamicContext } from "./Prompts.js";
+import { getCoreMemories } from "../database/coreMemory.js";
 import { type Task, type TaskStatus } from "./AppContext.js";
 
 // ── AgentState ────────────────────────────────────────────────────────────────

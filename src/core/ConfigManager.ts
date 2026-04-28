@@ -63,7 +63,9 @@ export class ConfigManager {
         if (fs.existsSync(CONFIG_PATH)) {
             try {
                 const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
-                return JSON.parse(data);
+                const loaded = JSON.parse(data);
+                // Merge with defaults so missing keys (from older versions) are filled
+                return { ...DEFAULT_CONFIG, ...loaded };
             } catch (e) {
                 console.error('Failed to parse config, using defaults');
                 return DEFAULT_CONFIG;
