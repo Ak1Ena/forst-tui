@@ -132,13 +132,13 @@ const checkpointer = SqliteSaver.fromConnString("./data/checkpoints.db");
 
 ## Duplication Map — What forst-tui reimplements manually vs what's native
 
-| forst-tui (current) | Native alternative | Duplicates? |
+| forst-tui (before) | Native alternative | Status |
 |---|---|---|
-| Manual `sliceIndex` walk in `callModel` | `trimMessages()` | ✅ Yes — replace |
-| `msg._getType() === 'system'` exclusion loops | `filterMessages({ excludeTypes: ["system"] })` | ✅ Yes — replace |
-| Consecutive human message collapse in `hydrateCheckpointer` | `mergeMessageRuns()` | ✅ Yes — replace |
-| `reducer: (x, y) => x.concat(y)` with no delete | `MessagesAnnotation` + `RemoveMessage` | ✅ Yes — replace |
-| `hydrateCheckpointer` entire function | `SqliteSaver` (with install) | ✅ Yes — replace |
+| Manual `sliceIndex` walk in `callModel` | `trimMessages()` | 🟡 Partial — `addMessages` adopted; token-aware trim optional |
+| `msg._getType() === 'system'` exclusion loops | `filterMessages({ excludeTypes: ["system"] })` | ✅ Done |
+| Consecutive human message collapse in `hydrateCheckpointer` | `mergeMessageRuns()` | ✅ Done |
+| `reducer: (x, y) => x.concat(y)` with no delete | `addMessages` reducer + `RemoveMessage` | ✅ Done |
+| `hydrateCheckpointer` entire function | `SqliteSaver` (with install) | ⬜ Optional future upgrade |
 | Chat clear via new `thread_id` | `REMOVE_ALL_MESSAGES` | 🟡 Partial |
 | `faiss-node` vector memory | `InMemoryStore` | 🟢 No — keep faiss (richer) |
 
@@ -168,7 +168,7 @@ Three root causes:
 
 ---
 
-## Fix A — Batch Independent Tool Calls in Parallel
+## ✅ Fix A — Batch Independent Tool Calls in Parallel *(done)*
 **File:** `src/core/Workflow.ts`
 
 When the LLM emits multiple tool calls in a single response, they are currently executed one-by-one. Independent calls (e.g. `read_file A` + `read_file B` + `run_command ls`) can run concurrently.
@@ -179,7 +179,7 @@ When the LLM emits multiple tool calls in a single response, they are currently 
 
 ---
 
-## Fix B — Deduplicate Redundant Tool Calls (Turn-Scoped Cache)
+## ✅ Fix B — Deduplicate Redundant Tool Calls (Turn-Scoped Cache) *(done)*
 **File:** `src/core/Workflow.ts`
 
 The agent frequently re-reads the same files or re-runs the same commands in the same session (e.g. `read_file README.md` on turn 1, 3, and 7).
@@ -211,7 +211,7 @@ Reading 5 files currently costs 5 LLM turns (one tool call each). The tool alrea
 
 ---
 
-## Fix D — Add `write_file` and `list_directory` Native Tools
+## ✅ Fix D — Add `write_file` and `list_directory` Native Tools *(done)*
 **Files:** `src/tools/system/write_file.ts`, `src/tools/system/list_directory.ts`
 
 The agent currently shells out to `bash -c "echo ... > file"` for writes and `ls` for directory scans.
@@ -342,7 +342,7 @@ const messages = getMessages(
 
 ---
 
-## Fix H2 — Prevent `MemorySaver` Growing Forever In-Session
+## ✅ Fix H2 — Prevent `MemorySaver` Growing Forever In-Session *(done)*
 **Files:** `src/core/Workflow.ts`, `src/index.tsx`
 
 The `AgentState` reducer is:

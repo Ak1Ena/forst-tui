@@ -22,7 +22,7 @@ import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
-import {HumanMessage, AIMessage, SystemMessage, ToolMessage} from '@langchain/core/messages';
+import {HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns} from '@langchain/core/messages';
 import { MemorySaver } from "@langchain/langgraph";
 import { Client } from "langsmith";
 import { Message } from './core/AppContext.js';
@@ -137,8 +137,17 @@ const hydrateCheckpointer = async (
     // H3: Do NOT prepend SystemMessage into checkpointer state.
     // System prompt is always reconstructed fresh inside callModel — storing it here
     // wastes one shortTermMemoryLimit slot and causes duplicate injection.
+
+    // Use native filterMessages() to strip any lingering SystemMessages (safer than
+    // manual .filter() — handles all BaseMessage subclasses correctly).
+    const noSystem = filterMessages(trimmed, { excludeTypes: ["system"] });
+
+    // Merge consecutive same-role messages (e.g. back-to-back HumanMessages) into
+    // one before persisting — reduces MemorySaver bloat without losing content.
+    const merged = mergeMessageRuns(noSystem);
+
     try {
-        await appWorkflow.updateState(config, { messages: trimmed });
+        await appWorkflow.updateState(config, { messages: merged });
     } catch (e) {
         console.warn('[hydrateCheckpointer] updateState failed:', e);
     }
