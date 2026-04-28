@@ -1,5 +1,6 @@
 import { getCoreMemories } from "../database/coreMemory.js";
 import { SkillManager } from "./SkillManager.js";
+import os from 'os';
 
 const BASE_PROMPT = `# FORST-TUI AI AGENT
 
@@ -14,10 +15,6 @@ const BASE_PROMPT = `# FORST-TUI AI AGENT
 - Start response with result or PLAN immediately.
 - Use \`core_memory\` for facts only.
 - Finish tasks with "COMPLETED: <id>".
-
-## 👤 CONTEXT
-- **User**: Aki (อากิ)
-- **Env**: Linux / Node.js TUI
 `;
 
 export const getSystemPrompt = (plannerMode: boolean = false) => {
@@ -26,6 +23,9 @@ export const getSystemPrompt = (plannerMode: boolean = false) => {
         const skillsPrompt = SkillManager.getSkillsPrompt();
         
         let finalPrompt = BASE_PROMPT;
+
+        // Add dynamic environment info
+        finalPrompt += `\n## 👤 CONTEXT\n- **Env**: ${os.platform()} / Node.js TUI\n`;
 
         if (plannerMode) {
             finalPrompt += `
