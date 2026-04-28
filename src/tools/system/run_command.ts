@@ -6,7 +6,7 @@ const execPromise = promisify(exec);
 
 export class RunCommandTool extends Tool {
     name = "run_command";
-    description = "Executes a shell command (terminal/bash) on the local system. Use for system utilities (ping, curl, etc), package managers (npm, pip), git, or running scripts. Use with caution.";
+    description = "Executes a shell command on the local system. Use with caution.";
 
     async _call(input: string, _runManager?: any, config?: any): Promise<string> {
         try {
