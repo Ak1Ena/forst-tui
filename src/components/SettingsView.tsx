@@ -18,10 +18,8 @@ export const SettingsView = ({ onClose }: Props) => {
     const fieldMapping: Record<string, string> = {
         'Name': 'name',
         'Type': 'type',
-        'Auth Type': 'authType',
         'Model': 'model',
         'API Key': 'apiKey',
-        'Access Token': 'accessToken',
         'Base URL': 'baseUrl',
         'Interaction Mode': 'interactionMode',
         'Recursion Limit': 'recursionLimit',
@@ -29,11 +27,9 @@ export const SettingsView = ({ onClose }: Props) => {
     };
 
     const providerTypes = ['gemini', 'openai', 'anthropic', 'openrouter', 'ollama'];
-    const authTypes = ['apiKey', 'oauth'];
     const interactionModes = ['approval', 'auto-accept', 'yolo'];
     const booleanOptions = ['enabled', 'disabled'];
     const [typeIndex, setTypeIndex] = useState(0);
-    const [authTypeIndex, setAuthTypeIndex] = useState(0);
     const [modeIndex, setModeIndex] = useState(0);
     const [boolIndex, setBoolIndex] = useState(0);
 
@@ -46,14 +42,7 @@ export const SettingsView = ({ onClose }: Props) => {
                 if (key.upArrow) setTypeIndex(prev => (prev - 1 + providerTypes.length) % providerTypes.length);
                 if (key.downArrow) setTypeIndex(prev => (prev + 1) % providerTypes.length);
                 if (key.return) {
-                    handleSaveEnum('providers', providerTypes[typeIndex], 'type');
-                }
-            }
-            if (editField === 'authType') {
-                if (key.upArrow) setAuthTypeIndex(prev => (prev - 1 + authTypes.length) % authTypes.length);
-                if (key.downArrow) setAuthTypeIndex(prev => (prev + 1) % authTypes.length);
-                if (key.return) {
-                    handleSaveEnum('providers', authTypes[authTypeIndex], 'authType');
+                    handleSaveEnum('providers', providerTypes[typeIndex]);
                 }
             }
             if (editField === 'interactionMode') {
@@ -73,15 +62,13 @@ export const SettingsView = ({ onClose }: Props) => {
         }
 
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
-        if (key.downArrow) setSelectedIndex(Math.min(9, selectedIndex + 1));
+        if (key.downArrow) setSelectedIndex(Math.min(7, selectedIndex + 1));
         if (key.return) {
-            const fields = ['name', 'type', 'authType', 'model', 'apiKey', 'accessToken', 'baseUrl', 'interactionMode', 'recursionLimit', 'plannerMode'];
+            const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'plannerMode'];
             const field = fields[selectedIndex];
             setEditField(field);
             if (field === 'type') {
                 setTypeIndex(providerTypes.indexOf(activeProvider.type || 'gemini'));
-            } else if (field === 'authType') {
-                setAuthTypeIndex(authTypes.indexOf(activeProvider.authType || 'apiKey'));
             } else if (field === 'interactionMode') {
                 setModeIndex(interactionModes.indexOf(settings.interactionMode || 'yolo'));
             } else if (field === 'plannerMode') {
@@ -94,11 +81,11 @@ export const SettingsView = ({ onClose }: Props) => {
         }
     });
 
-    const handleSaveEnum = (field: string, value: any, subField?: string) => {
+    const handleSaveEnum = (field: string, value: any) => {
         let newSettings = { ...settings };
-        if (field === 'providers' && subField) {
+        if (field === 'providers') {
             const updatedProviders = [...settings.providers];
-            (updatedProviders[0] as any)[subField] = value;
+            updatedProviders[0].type = value;
             newSettings.providers = updatedProviders;
         } else {
             (newSettings as any)[field] = value;
@@ -109,7 +96,7 @@ export const SettingsView = ({ onClose }: Props) => {
     };
 
     const handleSaveField = () => {
-        if (editField && !['type', 'authType', 'interactionMode', 'plannerMode'].includes(editField)) {
+        if (editField && editField !== 'type' && editField !== 'interactionMode' && editField !== 'plannerMode') {
             if (editField === 'recursionLimit') {
                 const newSettings = { ...settings, recursionLimit: parseInt(tempValue) || 50 };
                 setSettings(newSettings);
@@ -147,16 +134,6 @@ export const SettingsView = ({ onClose }: Props) => {
                                 </Box>
                             ))}
                         </Box>
-                    ) : fieldKey === 'authType' ? (
-                        <Box flexDirection="row">
-                            {authTypes.map((t, i) => (
-                                <Box key={t} marginLeft={i === 0 ? 0 : 2}>
-                                    <Text color={authTypeIndex === i ? 'yellow' : 'gray'} underline={authTypeIndex === i}>
-                                        {t.toUpperCase()}
-                                    </Text>
-                                </Box>
-                            ))}
-                        </Box>
                     ) : fieldKey === 'interactionMode' ? (
                         <Box flexDirection="row">
                             {interactionModes.map((m, i) => (
@@ -186,9 +163,8 @@ export const SettingsView = ({ onClose }: Props) => {
                     )
                 ) : (
                     <Text color="gray">
-                        {(label === 'API Key' || label === 'Access Token') && value ? '********' : 
+                        {label === 'API Key' && value ? '********' : 
                          label === 'Type' ? (value || 'gemini').toUpperCase() :
-                         label === 'Auth Type' ? (value || 'apiKey').toUpperCase() :
                          label === 'Interaction Mode' ? (value || 'yolo').toUpperCase() :
                          label === 'Coworker Planner' ? (value ? 'ENABLED' : 'DISABLED') :
                          value || '(empty)'}
@@ -209,17 +185,15 @@ export const SettingsView = ({ onClose }: Props) => {
             
             {renderField('Name', activeProvider.name, 0)}
             {renderField('Type', activeProvider.type, 1)}
-            {renderField('Auth Type', activeProvider.authType || 'apiKey', 2)}
-            {renderField('Model', activeProvider.model, 3)}
-            {renderField('API Key', activeProvider.apiKey || '', 4)}
-            {renderField('Access Token', activeProvider.accessToken || '', 5)}
-            {renderField('Base URL', activeProvider.baseUrl || '', 6)}
+            {renderField('Model', activeProvider.model, 2)}
+            {renderField('API Key', activeProvider.apiKey || '', 3)}
+            {renderField('Base URL', activeProvider.baseUrl || '', 4)}
             
             <Box borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} marginY={1} />
             
-            {renderField('Interaction Mode', settings.interactionMode, 7)}
-            {renderField('Recursion Limit', String(settings.recursionLimit), 8)}
-            {renderField('Coworker Planner', settings.plannerMode, 9)}
+            {renderField('Interaction Mode', settings.interactionMode, 5)}
+            {renderField('Recursion Limit', String(settings.recursionLimit), 6)}
+            {renderField('Coworker Planner', settings.plannerMode, 7)}
 
             <Box marginTop={2} flexDirection="column">
                 <Text dimColor>Use ↑/↓ to navigate, Enter to edit, Enter to save.</Text>

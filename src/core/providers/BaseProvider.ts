@@ -2,8 +2,6 @@ import { Message } from '../AppContext.js';
 
 export interface ProviderOptions {
     apiKey?: string;
-    accessToken?: string;
-    authType?: 'apiKey' | 'oauth';
     baseUrl?: string;
     model?: string;
 }

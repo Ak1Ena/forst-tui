@@ -11,24 +11,18 @@ export class ProviderFactory {
             case 'gemini':
                 return new GeminiProvider({
                     apiKey: config.apiKey,
-                    accessToken: config.accessToken,
-                    authType: config.authType,
                     model: config.model
                 });
             case 'openai':
             case 'openrouter':
                 return new OpenAIProvider({
                     apiKey: config.apiKey,
-                    accessToken: config.accessToken,
-                    authType: config.authType,
                     baseUrl: config.baseUrl,
                     model: config.model
                 });
             case 'anthropic':
                 return new AnthropicProvider({
                     apiKey: config.apiKey,
-                    accessToken: config.accessToken,
-                    authType: config.authType,
                     baseUrl: config.baseUrl,
                     model: config.model
                 });

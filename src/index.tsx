@@ -19,7 +19,6 @@ import { saveMessage, getMessages, createSession, getLastSession, getSessionMess
 import {VectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
 import {ProviderFactory} from './core/providers/ProviderFactory.js';
-import {oauthManager} from './core/OAuthManager.js';
 import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
@@ -663,23 +662,8 @@ const App = () => {
                 return;
             }
 
-            if (command === 'login') {
-                const provider = parts[1]?.toLowerCase();
-                if (provider === 'google' || provider === 'openai' || provider === 'anthropic') {
-                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Starting OAuth login for ${provider}...` } });
-                    oauthManager.login(provider).then(() => {
-                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Successfully logged in to ${provider} via OAuth!` } });
-                    }).catch(err => {
-                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `OAuth Login Failed: ${err.message}` } });
-                    });
-                } else {
-                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Usage: /login [google|openai|anthropic]' } });
-                }
-                return;
-            }
-
             if (command === 'help') {
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>|delete <id>], /login <provider>, /clear, /help, /tasks, /code <file>, /mode [approval|yolo|auto-accept]' } });
+                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: 'Commands: /session [list|new|load <id>|delete <id>], /clear, /help, /tasks, /code <file>, /mode [approval|yolo|auto-accept]' } });
                 return;
             }
         }

@@ -8,9 +8,8 @@ export class AnthropicProvider extends BaseProvider {
 
     constructor(options: ProviderOptions) {
         super(options);
-        const apiKey = options.authType === 'oauth' ? options.accessToken : options.apiKey;
         this.model = new ChatAnthropic({
-            apiKey: apiKey,
+            apiKey: options.apiKey,
             modelName: options.model || "claude-3-5-sonnet-20240620",
             clientOptions: {
                 baseURL: options.baseUrl,
