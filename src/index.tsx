@@ -395,6 +395,7 @@ const App = () => {
         
         setSessionId(Number(currentSid));
         setSessionList(getSessions());
+        dispatch({ type: 'RESET_USAGE' });
         dispatch({ type: 'SET_INTERACTION_MODE', payload: configManager.getSettings().interactionMode as any });
         const initialMessages = getMessages(Number(currentSid));
         dispatch({ type: 'SET_MESSAGES', payload: initialMessages });
@@ -450,6 +451,19 @@ const App = () => {
                 if (output && output.messages) {
                     const newMsgs = output.messages;
                     for (const msg of newMsgs) {
+                        // Extract token usage if available
+                        const usage = (msg as any).usage_metadata || (msg as any).additional_kwargs?.usage || (msg as any).response_metadata?.usage;
+                        if (usage) {
+                            dispatch({ 
+                                type: 'UPDATE_USAGE', 
+                                payload: {
+                                    input: usage.input_tokens || usage.prompt_tokens || 0,
+                                    output: usage.output_tokens || usage.completion_tokens || 0,
+                                    total: usage.total_tokens || 0
+                                }
+                            });
+                        }
+
                         let role: 'assistant' | 'tool' | 'system' = 'assistant';
                         if (msg instanceof ToolMessage) role = 'tool';
                         else if (msg instanceof SystemMessage) role = 'system';
@@ -824,6 +838,7 @@ const App = () => {
                     onClose={() => setView('chat')}
                     onSelect={(id) => {
                         setSessionId(id);
+                        dispatch({ type: 'RESET_USAGE' });
                         const msgs = getMessages(id);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
@@ -849,6 +864,7 @@ const App = () => {
                             // If deleting active session, create a new one
                             const newSid = Number(createSession());
                             setSessionId(newSid);
+                            dispatch({ type: 'RESET_USAGE' });
                             dispatch({ type: 'SET_MESSAGES', payload: [] });
                         }
                     }}
@@ -861,6 +877,7 @@ const App = () => {
                         agentState={activeProvider.error ? 'error' : state.agentState} 
                         interactionMode={state.interactionMode}
                         plannerMode={configManager.getSettings().plannerMode}
+                        totalUsage={state.totalUsage}
                     />
                     
                     <Box flexGrow={1} flexDirection="row" marginTop={1}>

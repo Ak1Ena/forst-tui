@@ -22,6 +22,12 @@ export type Task = {
     status: TaskStatus;
 };
 
+export type TokenUsage = {
+    input: number;
+    output: number;
+    total: number;
+};
+
 interface State {
     messages: Message[];
     agentState: AgentState;
@@ -29,6 +35,7 @@ interface State {
     interactionMode: InteractionMode;
     pendingToolCall?: any;
     taskQueue: Task[];
+    totalUsage: TokenUsage;
 }
 
 type Action =
@@ -42,7 +49,9 @@ type Action =
     | { type: 'ADD_TASK'; payload: Task }
     | { type: 'UPDATE_TASK'; payload: { id: string; status: TaskStatus } }
     | { type: 'CLEAR_QUEUE' }
-    | { type: 'SET_QUEUE'; payload: Task[] };
+    | { type: 'SET_QUEUE'; payload: Task[] }
+    | { type: 'UPDATE_USAGE'; payload: Partial<TokenUsage> }
+    | { type: 'RESET_USAGE' };
 
 const initialState: State = {
     messages: [],
@@ -50,6 +59,7 @@ const initialState: State = {
     activeTools: [],
     interactionMode: 'yolo',
     taskQueue: [],
+    totalUsage: { input: 0, output: 0, total: 0 }
 };
 
 const AppContext = createContext<{
@@ -84,6 +94,15 @@ function appReducer(state: State, action: Action): State {
             return { ...state, taskQueue: [] };
         case 'SET_QUEUE':
             return { ...state, taskQueue: action.payload };
+        case 'UPDATE_USAGE':
+            const newUsage = {
+                input: state.totalUsage.input + (action.payload.input || 0),
+                output: state.totalUsage.output + (action.payload.output || 0),
+                total: state.totalUsage.total + (action.payload.total || 0)
+            };
+            return { ...state, totalUsage: newUsage };
+        case 'RESET_USAGE':
+            return { ...state, totalUsage: { input: 0, output: 0, total: 0 } };
         default:
             return state;
     }

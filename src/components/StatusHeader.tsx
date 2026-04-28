@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { InteractionMode } from '../core/AppContext.js';
+import { InteractionMode, TokenUsage } from '../core/AppContext.js';
 
 interface Props {
     provider: string;
@@ -8,9 +8,10 @@ interface Props {
     agentState: string;
     interactionMode?: InteractionMode;
     plannerMode?: boolean;
+    totalUsage?: TokenUsage;
 }
 
-export const StatusHeader = ({ provider, model, agentState, interactionMode = 'yolo', plannerMode }: Props) => {
+export const StatusHeader = ({ provider, model, agentState, interactionMode = 'yolo', plannerMode, totalUsage }: Props) => {
     const getStatusColor = () => {
         switch (agentState) {
             case 'thinking': return 'yellow';
@@ -43,6 +44,17 @@ export const StatusHeader = ({ provider, model, agentState, interactionMode = 'y
                 <Text color="gray">)</Text>
             </Box>
             <Box>
+                {totalUsage && totalUsage.total > 0 && (
+                    <Box marginRight={2}>
+                        <Text color="gray">Tokens: </Text>
+                        <Text color="white">{totalUsage.input}</Text>
+                        <Text color="gray">i / </Text>
+                        <Text color="white">{totalUsage.output}</Text>
+                        <Text color="gray">o (</Text>
+                        <Text color="yellow">{totalUsage.total}</Text>
+                        <Text color="gray">)</Text>
+                    </Box>
+                )}
                 <Box marginRight={2}>
                     <Text color="magenta" bold>{getModeLabel()}</Text>
                 </Box>
