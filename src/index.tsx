@@ -591,6 +591,23 @@ const App = () => {
         saveMessage(sessionId, userMsg);
         await vectorMemory.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
+        // Auto-rename session if it's the first message
+        if (state.messages.length === 0) {
+            (async () => {
+                try {
+                    const prompt = `Summarize this user request into a short, concise session title (max 5 words). Do not use quotes or special characters.\n\nRequest: ${text}`;
+                    const response = await activeProvider.instance.chat([{ role: 'user', content: prompt }]);
+                    if (response && response.content) {
+                        const newName = response.content.replace(/["']/g, '').trim();
+                        updateSessionName(sessionId, newName);
+                        setSessionList(getSessions());
+                    }
+                } catch (e) {
+                    // Silently fail session renaming
+                }
+            })();
+        }
+
         const appWorkflow = createAgentWorkflow(
             activeProvider.instance, 
             state.interactionMode,
