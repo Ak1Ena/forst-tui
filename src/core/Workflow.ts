@@ -4,6 +4,7 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { getTools } from "../tools/index.js";
 import { BaseProvider } from "./providers/BaseProvider.js";
 import { toolRetriever } from "./ToolRetriever.js";
+import { vectorMemory } from "../database/vectorStore.js";
 
 export type TaskStatus = 'pending' | 'in-progress' | 'completed' | 'failed';
 export type Task = {
@@ -58,7 +59,8 @@ function getRetrievalQuery(msgs: BaseMessage[], currentTask?: Task): string {
 export const createAgentWorkflow = (
   provider: BaseProvider, 
   interactionMode: 'approval' | 'auto-accept' | 'yolo',
-  checkpointer?: any
+  checkpointer?: any,
+  shortTermMemoryLimit: number = 12
 ) => {
   const tools = getTools();
   const model = provider.getModel();
@@ -103,16 +105,42 @@ export const createAgentWorkflow = (
   const callModel = async (state: typeof AgentState.State, config?: any) => {
     const { messages, taskQueue } = state;
 
-    // --- 0. Sanitize messages for Anthropic/strict providers ---
-    // Anthropic requires that system messages ONLY appear at the very beginning.
-    // We consolidate all system messages into one to avoid "System messages are only permitted as the first passed message" errors.
+    // --- 0. Retrieve Relevant Context (Dual-Query + Threshold) ---
+    const rawQuery = getRetrievalQuery(messages, taskQueue.find(t => t.status === 'in-progress'));
+    let relevantContext = "";
+    
+    if (rawQuery) {
+        // Dual query: Raw + Lightweight Rewrite
+        const queries = [
+            rawQuery,
+            `What past context is relevant to: ${rawQuery}?`
+        ];
+
+        const results = await Promise.all(queries.map(q => vectorMemory.search(q, 5, 0.5)));
+        
+        // Flatten, Deduplicate by content, and format
+        const seen = new Set<string>();
+        const uniqueDocs = results.flat().filter(doc => {
+            if (seen.has(doc.pageContent)) return false;
+            seen.add(doc.pageContent);
+            return true;
+        });
+
+        if (uniqueDocs.length > 0) {
+            relevantContext = uniqueDocs.map(doc => {
+                const timestamp = doc.metadata.timestamp ? new Date(doc.metadata.timestamp).toLocaleString() : 'Unknown';
+                return `[MEMORIZED TURN - ${timestamp}]\n${doc.pageContent}`;
+            }).join("\n---\n");
+        }
+    }
+
+    // --- 1. Sanitize messages for Anthropic/strict providers ---
     let systemContent = "";
     const nonSystemMessages: BaseMessage[] = [];
     
     for (const m of messages) {
         if (m._getType() === 'system') {
             const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            // Only add if not already part of the accumulated system content to prevent bloat
             if (!systemContent.includes(content)) {
                 if (systemContent) systemContent += "\n\n";
                 systemContent += content;
@@ -121,11 +149,36 @@ export const createAgentWorkflow = (
             nonSystemMessages.push(m);
         }
     }
+
+    // Inject relevant context into system content
+    if (relevantContext) {
+        const contextHeader = "\n\n[RELEVANT CONVERSATION CONTEXT]\n" + relevantContext + "\n[END CONTEXT]";
+        if (!systemContent.includes("[RELEVANT CONVERSATION CONTEXT]")) {
+            systemContent += contextHeader;
+        }
+    }
     
-    // Ensure we don't end up with an empty message list if we only have a system message
+    // TRUNCATE: Using dynamic limit from settings
+    let sliceIndex = Math.max(0, nonSystemMessages.length - shortTermMemoryLimit);
+
+    // Safety: If we sliced into the middle of a tool sequence (starting with a ToolMessage
+    // or an AIMessage with tool_calls), walk backward until we find a HumanMessage.
+    while (sliceIndex > 0) {
+        const firstMsg = nonSystemMessages[sliceIndex];
+        const type = firstMsg._getType();
+        
+        // If it's a Human message, it's a safe place to start.
+        if (type === 'human') break;
+        
+        // If it's a Tool message or an AI message with tool calls, we MUST go back further.
+        sliceIndex--;
+    }
+
+    const recentMessages = nonSystemMessages.slice(sliceIndex);
+
     let activeMessages: BaseMessage[] = systemContent 
-        ? [new SystemMessage(systemContent), ...nonSystemMessages]
-        : nonSystemMessages;
+        ? [new SystemMessage(systemContent), ...recentMessages]
+        : recentMessages;
 
     // --- 0.1 Sanitize for Anthropic: Every tool_use MUST have a tool_result ---
     // If the sequence ends with an AI message containing tool calls, it means the 

@@ -23,6 +23,7 @@ export const SettingsView = ({ onClose }: Props) => {
         'Base URL': 'baseUrl',
         'Interaction Mode': 'interactionMode',
         'Recursion Limit': 'recursionLimit',
+        'Short-term Memory': 'shortTermMemoryLimit',
         'Coworker Planner': 'plannerMode'
     };
 
@@ -62,9 +63,9 @@ export const SettingsView = ({ onClose }: Props) => {
         }
 
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
-        if (key.downArrow) setSelectedIndex(Math.min(7, selectedIndex + 1));
+        if (key.downArrow) setSelectedIndex(Math.min(8, selectedIndex + 1));
         if (key.return) {
-            const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'plannerMode'];
+            const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode'];
             const field = fields[selectedIndex];
             setEditField(field);
             if (field === 'type') {
@@ -75,6 +76,8 @@ export const SettingsView = ({ onClose }: Props) => {
                 setBoolIndex(settings.plannerMode ? 0 : 1);
             } else if (field === 'recursionLimit') {
                 setTempValue(String(settings.recursionLimit || 50));
+            } else if (field === 'shortTermMemoryLimit') {
+                setTempValue(String(settings.shortTermMemoryLimit || 12));
             } else {
                 setTempValue((activeProvider as any)[field] || '');
             }
@@ -99,6 +102,10 @@ export const SettingsView = ({ onClose }: Props) => {
         if (editField && editField !== 'type' && editField !== 'interactionMode' && editField !== 'plannerMode') {
             if (editField === 'recursionLimit') {
                 const newSettings = { ...settings, recursionLimit: parseInt(tempValue) || 50 };
+                setSettings(newSettings);
+                configManager.save(newSettings);
+            } else if (editField === 'shortTermMemoryLimit') {
+                const newSettings = { ...settings, shortTermMemoryLimit: parseInt(tempValue) || 12 };
                 setSettings(newSettings);
                 configManager.save(newSettings);
             } else {
@@ -193,7 +200,8 @@ export const SettingsView = ({ onClose }: Props) => {
             
             {renderField('Interaction Mode', settings.interactionMode, 5)}
             {renderField('Recursion Limit', String(settings.recursionLimit), 6)}
-            {renderField('Coworker Planner', settings.plannerMode, 7)}
+            {renderField('Short-term Memory', String(settings.shortTermMemoryLimit), 7)}
+            {renderField('Coworker Planner', settings.plannerMode, 8)}
 
             <Box marginTop={2} flexDirection="column">
                 <Text dimColor>Use ↑/↓ to navigate, Enter to edit, Enter to save.</Text>
