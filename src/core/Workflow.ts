@@ -6,6 +6,7 @@ import { BaseProvider } from "./providers/BaseProvider.js";
 import { toolRetriever } from "./ToolRetriever.js";
 import { vectorMemory } from "../database/vectorStore.js";
 import { getStaticPrompt, getDynamicContext } from "./Prompts.js";
+import { getCoreMemories } from "../database/coreMemory.js";
 import { type Task, type TaskStatus } from "./AppContext.js";
 
 // ── AgentState ────────────────────────────────────────────────────────────────
@@ -161,6 +162,40 @@ function syncTaskQueue(messages: BaseMessage[], taskQueue: Task[]): Task[] {
     return updatedQueue;
 }
 
+/**
+ * TF-IDF search for Core Memories.
+ * Since core_memories is small, we can build a temporary index and search it.
+ */
+function retrieveRelevantMemories(query: string): string {
+    const memories = getCoreMemories();
+    if (memories.length === 0 || !query) return "";
+
+    // Simple keyword matching/scoring for core memories
+    const queryTerms = query.toLowerCase().split(/\W+/).filter(t => t.length > 2);
+    if (queryTerms.length === 0) {
+        // Fallback: if query is too short, return last 5 memories
+        return memories.slice(-5).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
+    }
+
+    const scored = memories.map(m => {
+        const content = m.content.toLowerCase();
+        let score = 0;
+        queryTerms.forEach(term => {
+            if (content.includes(term)) score += 1;
+        });
+        return { memory: m, score };
+    }).filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    if (scored.length === 0) {
+        // Fallback: return last 3 memories
+        return memories.slice(-3).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
+    }
+
+    return scored.map(s => `(${s.memory.category.toUpperCase()}) ${s.memory.content}`).join('\n');
+}
+
 export const createAgentWorkflow = (
   provider: BaseProvider,
   interactionMode: 'approval' | 'auto-accept' | 'yolo',
@@ -222,36 +257,43 @@ export const createAgentWorkflow = (
     const lastHumanIdx = [...messages].reverse().findIndex(m => m._getType() === 'human');
     if (lastHumanIdx === 0) toolResultCache.clear();
 
-    // --- 1. Retrieval & Context ---
-    const relevantContext = await retrieveRelevantContext(messages, taskQueue);
-
-    // --- 2. History Truncation & System Prompt ---
-    const recentMessages = truncateHistory(messages, shortTermMemoryLimit);
+    // --- 1. Retrieval (Core Memories + Conversation RAG) ---
+    const currentTask = taskQueue.find(t => t.status === 'in-progress');
+    const query = getRetrievalQuery(messages, currentTask);
     
-    let dynamicParts = getDynamicContext();
-    if (relevantContext) {
-        dynamicParts += "\n\n[RELEVANT CONVERSATION CONTEXT]\n" + relevantContext + "\n[END CONTEXT]";
+    const relevantMemories = retrieveRelevantMemories(query);
+    const relevantConversation = await retrieveRelevantContext(messages, taskQueue);
+
+    // --- 2. Build Context Blocks (Ordered: Static -> Dynamic) ---
+    const systemBlocks: any[] = [
+        { 
+            type: "text", 
+            text: getStaticPrompt(plannerMode), 
+            cache_control: { type: "ephemeral" } // Anthropic stable prefix caching
+        },
+    ];
+
+    const dynamicContext = getDynamicContext(relevantMemories, relevantConversation);
+    if (dynamicContext) {
+        systemBlocks.push({ type: "text", text: dynamicContext });
     }
 
-    const systemBlocks: any[] = [
-        { type: "text", text: getStaticPrompt(plannerMode), cache_control: { type: "ephemeral" } },
-    ];
-    if (dynamicParts) systemBlocks.push({ type: "text", text: dynamicParts });
-
+    // --- 3. History Truncation (Recent Messages) ---
+    const recentMessages = truncateHistory(messages, shortTermMemoryLimit);
     let activeMessages: BaseMessage[] = [new SystemMessage({ content: systemBlocks }), ...recentMessages];
 
-    // --- 3. Sanitization (Anthropic Compliance) ---
+    // --- 4. Sanitization (Anthropic Compliance) ---
     activeMessages = sanitizeForAnthropic(activeMessages);
 
-    // --- 4. Task Queue Sync & Injection ---
+    // --- 5. Task Queue Sync & Injection ---
     let updatedQueue = syncTaskQueue(activeMessages, taskQueue);
-    const currentTask = updatedQueue.find(t => t.status === 'in-progress');
+    const syncCurrentTask = updatedQueue.find(t => t.status === 'in-progress');
 
-    if (currentTask && currentTask.status !== 'failed') {
+    if (syncCurrentTask && syncCurrentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
-        const taskContext = `[CURRENT TASK] (ID: ${currentTask.id})\n${currentTask.description}\n\n` +
+        const taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n\n` +
             (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
-            `When you finish this task, write "COMPLETED: ${currentTask.id}" in your response.`;
+            `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
 
         const firstMsg = activeMessages[0] as SystemMessage;
         if (Array.isArray(firstMsg.content)) {
@@ -261,17 +303,16 @@ export const createAgentWorkflow = (
         }
     }
 
-    // --- 5. Tool Selection & Model Binding ---
+    // --- 6. Tool Selection & Model Binding (Top-K Tools / Catalog) ---
     const toolHistory = hasToolHistory(activeMessages);
     let chosenModel: any;
 
     if (toolHistory) {
         chosenModel = getModelForTools(tools);
     } else {
-        const query = getRetrievalQuery(activeMessages, currentTask);
-        const retrieved = query ? toolRetriever.search(query, 3) : [];
-        if (retrieved.length > 0) {
-            chosenModel = getModelForTools(retrieved.map(e => e.tool));
+        const retrievedTools = query ? toolRetriever.search(query, 3) : [];
+        if (retrievedTools.length > 0) {
+            chosenModel = getModelForTools(retrievedTools.map(e => e.tool));
         } else {
             chosenModel = model;
             const catalog = toolRetriever.getCatalog();
