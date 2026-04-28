@@ -212,7 +212,11 @@ const App = () => {
     useInput((input, key) => {
         if (key.escape && state.agentState !== 'idle') {
             if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
+                try {
+                    abortControllerRef.current.abort();
+                } catch (e) {
+                    // Ignore errors during abort
+                }
                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
                 dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
             }
@@ -632,8 +636,16 @@ const App = () => {
 
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
 
-        const stream = await appWorkflow.stream({ messages: inputMessages }, config);
-        await processStream(stream, sessionId);
+        try {
+            const stream = await appWorkflow.stream({ messages: inputMessages }, config);
+            await processStream(stream, sessionId);
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                // Handled in useInput and processStream
+            } else {
+                throw error;
+            }
+        }
     }, [activeProvider, state.messages, state.interactionMode, vectorMemory, tasks, dispatch, sessionId, processStream, state.taskQueue]);
 
     const handleApprove = useCallback(async () => {
@@ -652,8 +664,16 @@ const App = () => {
             signal: controller.signal
         };
 
-        const stream = await appWorkflow.stream(null, config);
-        await processStream(stream, sessionId);
+        try {
+            const stream = await appWorkflow.stream(null, config);
+            await processStream(stream, sessionId);
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                // Handled in useInput and processStream
+            } else {
+                throw error;
+            }
+        }
     }, [state.agentState, state.interactionMode, activeProvider, sessionId, processStream]);
 
     const handleDeny = useCallback(async () => {
@@ -684,8 +704,16 @@ const App = () => {
         await appWorkflow.updateState(config, { messages: denialMessages });
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
-        const stream = await appWorkflow.stream(null, config);
-        await processStream(stream, sessionId);
+        try {
+            const stream = await appWorkflow.stream(null, config);
+            await processStream(stream, sessionId);
+        } catch (error: any) {
+            if (error?.name === 'AbortError') {
+                // Handled in useInput and processStream
+            } else {
+                throw error;
+            }
+        }
     }, [state.agentState, state.pendingToolCall, state.interactionMode, activeProvider, sessionId, processStream]);
 
     return (
