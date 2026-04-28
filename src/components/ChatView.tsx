@@ -25,6 +25,48 @@ const ensureString = (content: any): string => {
     return String(content || '');
 };
 
+type LineSegment = {
+    text: string;
+    color?: string;
+    bold?: boolean;
+    italic?: boolean;
+    backgroundColor?: string;
+};
+
+interface ChatLine {
+    segments: LineSegment[];
+}
+
+const parseLineSegments = (line: string, baseProps: Partial<LineSegment> = {}): LineSegment[] => {
+    const segments: LineSegment[] = [];
+    const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`)/g;
+    let match;
+    let lastIndex = 0;
+
+    while ((match = regex.exec(line)) !== null) {
+        if (match.index > lastIndex) {
+            segments.push({ ...baseProps, text: line.slice(lastIndex, match.index) });
+        }
+
+        const part = match[0];
+        if (part.startsWith('**') && part.endsWith('**')) {
+            segments.push({ ...baseProps, text: part.slice(2, -2), bold: true });
+        } else if (part.startsWith('*') && part.endsWith('*')) {
+            segments.push({ ...baseProps, text: part.slice(1, -1), italic: true });
+        } else if (part.startsWith('`') && part.endsWith('`')) {
+            segments.push({ ...baseProps, text: part.slice(1, -1), backgroundColor: 'white', color: 'black' });
+        }
+        
+        lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < line.length) {
+        segments.push({ ...baseProps, text: line.slice(lastIndex) });
+    }
+
+    return segments.length > 0 ? segments : [{ ...baseProps, text: line }];
+};
+
 export const ChatView = ({ messages, height, scrollOffset }: Props) => {
     const getIcon = (role: string) => {
         switch (role) {
@@ -38,7 +80,7 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
 
     // Helper to generate all lines for the chat
     const allLines = useMemo(() => {
-        const lines: { text: string; color?: string; bold?: boolean; italic?: boolean }[] = [];
+        const lines: ChatLine[] = [];
 
         messages.forEach((msg, msgIndex) => {
             // Header for non-tool messages or first tool in a group
@@ -47,9 +89,11 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
             if (msg.role !== 'tool' || isFirstTool) {
                 const roleColor = msg.role === 'user' ? 'blue' : msg.role === 'assistant' ? 'green' : 'yellow';
                 lines.push({ 
-                    text: `${getIcon(msg.role)} ${msg.role.toUpperCase()}`, 
-                    color: roleColor, 
-                    bold: true 
+                    segments: [{
+                        text: `${getIcon(msg.role)} ${msg.role.toUpperCase()}`, 
+                        color: roleColor, 
+                        bold: true 
+                    }]
                 });
             }
 
@@ -57,9 +101,11 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 msg.tool_calls.forEach(tc => {
                     const argStr = typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args);
                     lines.push({ 
-                        text: `   🛠️ CALL: [${tc.name}] ${argStr}`, 
-                        color: 'magenta', 
-                        italic: true 
+                        segments: [{
+                            text: `   🛠️ CALL: [${tc.name}] ${argStr}`, 
+                            color: 'magenta', 
+                            italic: true 
+                        }]
                     });
                 });
             }
@@ -72,13 +118,14 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 const result = isEdit ? content : (content.length > 500 ? content.slice(0, 500) + '...' : content);
                 
                 lines.push({ 
-                    text: `   🛠️ RESULT: [${msg.name}]`, 
-                    color: 'cyan', 
-                    bold: true
+                    segments: [{
+                        text: `   🛠️ RESULT: [${msg.name}]`, 
+                        color: 'cyan', 
+                        bold: true
+                    }]
                 });
                 result.split('\n').forEach(line => {
-                    // Keep empty lines for boxed layout
-                    lines.push({ text: `     ${line}`, color: 'gray' });
+                    lines.push({ segments: [{ text: `     ${line}`, color: 'gray' }] });
                 });
             } else if (content) {
                 // Split content into lines and handle code blocks
@@ -88,20 +135,27 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
                 parts.forEach(line => {
                     if (line.startsWith('```')) {
                         inCodeBlock = !inCodeBlock;
-                        lines.push({ text: `   ${line}`, color: 'yellow', bold: true });
+                        lines.push({ segments: [{ text: `   ${line}`, color: 'yellow', bold: true }] });
                     } else if (inCodeBlock) {
-                        lines.push({ text: `   ${line}`, color: 'blue' }); // Blue for code content
+                        lines.push({ segments: [{ text: `   ${line}`, color: 'blue' }] });
                     } else if (line.trim()) {
                         const isError = msg.role === 'system' && line.toLowerCase().includes('error');
-                        lines.push({ text: `   ${line}`, color: isError ? 'red' : undefined });
+                        const baseColor = isError ? 'red' : undefined;
+                        
+                        // Handle list items
+                        if (line.trim().startsWith('- ') || line.trim().match(/^\d+\. /)) {
+                            lines.push({ segments: parseLineSegments(`   ${line}`, { color: baseColor }) });
+                        } else {
+                            lines.push({ segments: parseLineSegments(`   ${line}`, { color: baseColor }) });
+                        }
                     } else {
-                        lines.push({ text: '' });
+                        lines.push({ segments: [{ text: '' }] });
                     }
                 });
             }
             
             // Spacing between messages
-            lines.push({ text: '' });
+            lines.push({ segments: [{ text: '' }] });
         });
 
         return lines;
@@ -122,13 +176,18 @@ export const ChatView = ({ messages, height, scrollOffset }: Props) => {
             ) : (
                 visibleLines.map((line, index) => (
                     <Box key={index}>
-                        <Text 
-                            color={line.color} 
-                            bold={line.bold} 
-                            italic={line.italic} 
-                            wrap="wrap"
-                        >
-                            {line.text}
+                        <Text wrap="wrap">
+                            {line.segments.map((seg, sIdx) => (
+                                <Text 
+                                    key={sIdx}
+                                    color={seg.color} 
+                                    bold={seg.bold} 
+                                    italic={seg.italic}
+                                    backgroundColor={seg.backgroundColor as any}
+                                >
+                                    {seg.text}
+                                </Text>
+                            ))}
                         </Text>
                     </Box>
                 ))

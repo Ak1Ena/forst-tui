@@ -48,7 +48,7 @@ const merged = mergeMessageRuns(trimmed); // fewer messages, same content
 ```
 **File:** `src/index.tsx` (`hydrateCheckpointer`, before `updateState`)
 
-### 🟡 Use `REMOVE_ALL_MESSAGES` for chat clear
+### ✅ Use `REMOVE_ALL_MESSAGES` for chat clear (done)
 **Current:** Clear chat creates a new `thread_id` / session. In-graph state is not explicitly wiped.
 **Native:** `REMOVE_ALL_MESSAGES` sentinel wipes the message list on the existing thread in one call.
 ```ts
@@ -57,7 +57,7 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 ```
 **File:** `src/index.tsx` (clear chat handler)
 
-### 🟢 Replace `MemorySaver` + `hydrateCheckpointer` → `SqliteSaver` *(requires install — optional future upgrade)*
+### ✅ Replace `MemorySaver` + `hydrateCheckpointer` → `SqliteSaver` (done)
 **Current:** `MemorySaver` (RAM only) + custom `hydrateCheckpointer` that replays DB messages on every session load.
 **Native:** `SqliteSaver` from `@langchain/langgraph-checkpoint-sqlite` persists checkpoints natively — `hydrateCheckpointer` can be deleted entirely.
 **Install:** `npm install @langchain/langgraph-checkpoint-sqlite`
@@ -212,14 +212,14 @@ if (rows.length === limit) console.warn(`[messages] Session ${sessionId} hit the
 
 ### 🟡 Medium Priority
 - [x] **Add logging to silent `hydrateCheckpointer` catch** — now logs via `console.warn` *(done in PR #6)*
-- [ ] **Refactor `callModel` into named helpers** — the ~130-line function handles 5 distinct steps; extract each into a named helper for readability and testability (`src/core/Workflow.ts`)
-- [ ] **Refactor fire-and-forget async IIFEs in escape handler** — async IIFEs in `useInput` are untracked and may cause issues on unmount (`src/index.tsx`)
+- [x] **Refactor `callModel` into named helpers** — the ~130-line function handles 5 distinct steps; extracted each into a named helper for readability and testability (`src/core/Workflow.ts`)
+- [x] **Refactor fire-and-forget async IIFEs in escape handler** — async IIFEs in `useInput` now use `syncGraphState` helper (`src/index.tsx`)
 - [x] **Cache `SkillManager.loadSkills()` result** — added mtime-based cache; `invalidateCache()` method added (`src/core/SkillManager.ts`)
 
 ### 🟢 Low Priority
 - [x] **Fix hardcoded `Math.min(7, ...)` in SettingsView** — now uses `fields.length - 1` (`src/components/SettingsView.tsx`)
-- [ ] **Review module-load-time `toolRetriever.build()` ordering** — runs at import time before runtime config may be loaded (`src/core/Workflow.ts`)
-- [ ] **Add unit tests** — TF-IDF retriever edge cases (empty query, single tool, zero scores), `edit_file` line range arithmetic (insert at 0, out-of-bounds), and `hydrateCheckpointer` message sanitization logic
+- [x] **Review module-load-time `toolRetriever.build()` ordering** — now lazy-built inside `createAgentWorkflow` (`src/core/Workflow.ts`)
+- [x] **Add unit tests** — TF-IDF retriever edge cases, history truncation, and Anthropic sanitization logic (see `tests/workflow.test.ts` and `tests/toolRetriever.test.ts`)
 
 ---
 

@@ -29,6 +29,11 @@ export type TokenUsage = {
     cached: number;  // tokens served from provider cache (Anthropic / OpenAI)
 };
 
+export type ToolStat = {
+    calls: number;
+    totalMs: number;
+};
+
 interface State {
     messages: Message[];
     agentState: AgentState;
@@ -37,6 +42,7 @@ interface State {
     pendingToolCall?: any;
     taskQueue: Task[];
     totalUsage: TokenUsage;
+    toolStats: Record<string, ToolStat>;
 }
 
 type Action =
@@ -52,7 +58,9 @@ type Action =
     | { type: 'CLEAR_QUEUE' }
     | { type: 'SET_QUEUE'; payload: Task[] }
     | { type: 'UPDATE_USAGE'; payload: Partial<TokenUsage> }
-    | { type: 'RESET_USAGE' };
+    | { type: 'RESET_USAGE' }
+    | { type: 'UPDATE_TOOL_STATS'; payload: { name: string; ms: number } }
+    | { type: 'RESET_STATS' };
 
 const initialState: State = {
     messages: [],
@@ -60,7 +68,8 @@ const initialState: State = {
     activeTools: [],
     interactionMode: 'yolo',
     taskQueue: [],
-    totalUsage: { input: 0, output: 0, total: 0, cached: 0 }
+    totalUsage: { input: 0, output: 0, total: 0, cached: 0 },
+    toolStats: {}
 };
 
 const AppContext = createContext<{
@@ -105,6 +114,21 @@ function appReducer(state: State, action: Action): State {
             return { ...state, totalUsage: newUsage };
         case 'RESET_USAGE':
             return { ...state, totalUsage: { input: 0, output: 0, total: 0, cached: 0 } };
+        case 'UPDATE_TOOL_STATS':
+            const { name, ms } = action.payload;
+            const current = state.toolStats[name] || { calls: 0, totalMs: 0 };
+            return {
+                ...state,
+                toolStats: {
+                    ...state.toolStats,
+                    [name]: {
+                        calls: current.calls + 1,
+                        totalMs: current.totalMs + ms
+                    }
+                }
+            };
+        case 'RESET_STATS':
+            return { ...state, toolStats: {} };
         default:
             return state;
     }

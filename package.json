@@ -55,6 +55,7 @@
     "@langchain/core": "^1.1.41",
     "@langchain/google-genai": "^2.1.28",
     "@langchain/langgraph": "^1.2.9",
+    "@langchain/langgraph-checkpoint-sqlite": "^1.0.1",
     "@langchain/ollama": "^1.2.6",
     "@langchain/openai": "^1.4.4",
     "better-sqlite3": "^12.9.0",

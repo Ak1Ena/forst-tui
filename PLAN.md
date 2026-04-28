@@ -138,8 +138,8 @@ const checkpointer = SqliteSaver.fromConnString("./data/checkpoints.db");
 | `msg._getType() === 'system'` exclusion loops | `filterMessages({ excludeTypes: ["system"] })` | ✅ Done |
 | Consecutive human message collapse in `hydrateCheckpointer` | `mergeMessageRuns()` | ✅ Done |
 | `reducer: (x, y) => x.concat(y)` with no delete | `addMessages` reducer + `RemoveMessage` | ✅ Done |
-| `hydrateCheckpointer` entire function | `SqliteSaver` (with install) | ⬜ Optional future upgrade |
-| Chat clear via new `thread_id` | `REMOVE_ALL_MESSAGES` | 🟡 Partial |
+| `hydrateCheckpointer` entire function | `SqliteSaver` (with install) | ✅ Done |
+| Chat clear via new `thread_id` | `REMOVE_ALL_MESSAGES` | ✅ Done |
 | `faiss-node` vector memory | `InMemoryStore` | 🟢 No — keep faiss (richer) |
 
 ---
