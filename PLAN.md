@@ -324,7 +324,7 @@ Three compounding problems:
 
 ---
 
-## Fix H1 — Limit `getMessages()` at Hydration Time
+## ✅ Fix H1 — Limit `getMessages()` at Hydration Time *(done in PR #6)*
 **File:** `src/index.tsx` (~line 403, `hydrateCheckpointer` call site)
 
 `hydrateCheckpointer` currently calls `getMessages(sessionId)` with the default `limit: 100`. This pumps up to 100 messages into `MemorySaver` even though `callModel` will only use `shortTermMemoryLimit` of them.
@@ -365,7 +365,7 @@ if (nonSystemMessages.length > shortTermMemoryLimit * 2) {
 
 ---
 
-## Fix H3 — Strip `SystemMessage` From Checkpointer State
+## ✅ Fix H3 — Strip `SystemMessage` From Checkpointer State *(done in PR #6)*
 **File:** `src/index.tsx` (`hydrateCheckpointer`, lines ~137–143)
 
 Current code:
@@ -387,7 +387,7 @@ await appWorkflow.updateState(config, { messages: trimmed });
 
 ---
 
-## Fix H4 — Warn When `getMessages` Hits the 100-Message Cap
+## ✅ Fix H4 — Warn When `getMessages` Hits the 100-Message Cap *(done in PR #6)*
 **File:** `src/database/messages.ts` (line ~71)
 
 If a session exceeds 100 messages, `getMessages` silently returns only the first 100. The developer and user have no signal that history is being truncated at load time.
@@ -402,13 +402,13 @@ if (rows.length === limit) {
 
 ---
 
-## Files to Modify
+## Files Modified
 
-| File | Change |
-|---|---|
-| `src/index.tsx` | Pass `shortTermMemoryLimit×2` to `getMessages()` at hydration; strip `SystemMessage` from `updateState()` payload |
-| `src/core/Workflow.ts` | Optional: periodic truncation write-back after slice |
-| `src/database/messages.ts` | Add cap warning when `rows.length === limit` |
+| File | Change | Status |
+|---|---|---|
+| `src/index.tsx` | Pass `shortTermMemoryLimit×2` to `getMessages()` at hydration; strip `SystemMessage` from `updateState()` payload | ✅ Done (PR #6) |
+| `src/core/Workflow.ts` | Optional: periodic truncation write-back after slice | ⬜ Pending (Fix H2) |
+| `src/database/messages.ts` | Add cap warning when `rows.length === limit` | ✅ Done (PR #6) |
 
 ---
 
@@ -444,7 +444,7 @@ Three root causes:
 
 ---
 
-## Fix 1 — Split System Prompt into Static + Dynamic Layers
+## ✅ Fix 1 — Split System Prompt into Static + Dynamic Layers *(done in PR #6)*
 **File:** `src/core/Prompts.ts`
 
 The current `getSystemPrompt()` mixes static rules with dynamic data (memories, skills, task context) into one string — this makes caching impossible since it changes every turn.
@@ -459,7 +459,7 @@ In `Workflow.ts callModel`, build the final system message from two blocks:
 
 ---
 
-## Fix 2 — In-Memory Prompt String Cache
+## ✅ Fix 2 — In-Memory Prompt String Cache *(done in PR #6)*
 **File:** `src/core/Prompts.ts`
 
 `getStaticPrompt()` currently re-reads all skill `.md` files on every agent turn. Add a module-level cache keyed by `plannerMode`:
@@ -482,7 +482,7 @@ Call `invalidatePromptCache()` in:
 
 ---
 
-## Fix 3 — Anthropic Prompt Caching
+## ✅ Fix 3 — Anthropic Prompt Caching *(done in PR #6)*
 **File:** `src/core/providers/AnthropicProvider.ts`
 
 Anthropic caches any content block ≥ 1,024 tokens for 5 minutes. Cache hits cost **10% of normal input price**.
@@ -503,7 +503,7 @@ new SystemMessage({
 
 ---
 
-## Fix 4 — OpenAI / OpenRouter Prompt Caching
+## ✅ Fix 4 — OpenAI / OpenRouter Prompt Caching *(done in PR #6)*
 **File:** `src/core/providers/OpenAIProvider.ts`
 
 OpenAI auto-caches prompt prefixes ≥ 1,024 tokens **for free** — but only when the prefix is byte-identical across calls. Fix 1 guarantees this by keeping the static block stable.
@@ -514,7 +514,7 @@ OpenAI auto-caches prompt prefixes ≥ 1,024 tokens **for free** — but only wh
 
 ---
 
-## Fix 5 — Lower Default `recursionLimit`
+## ✅ Fix 5 — Lower Default `recursionLimit` *(done in PR #6)*
 **File:** `src/core/ConfigManager.ts` — line 39
 
 ```ts
@@ -525,7 +525,7 @@ Most tasks complete in < 10 steps. This alone cuts worst-case per-request token 
 
 ---
 
-## Fix 6 — Display Cache Hit Stats in StatusHeader
+## ✅ Fix 6 — Display Cache Hit Stats in StatusHeader *(done in PR #6)*
 **Files:** `src/core/AppContext.tsx`, `src/components/StatusHeader.tsx`, `src/index.tsx`
 
 1. Add `cached: number` field to `TokenUsage` in `AppContext.tsx`
@@ -540,20 +540,20 @@ Most tasks complete in < 10 steps. This alone cuts worst-case per-request token 
 
 ---
 
-## Files to Modify
+## Files Modified *(all done in PR #6)*
 
-| File | Change |
-|---|---|
-| `src/core/Prompts.ts` | Split into `getStaticPrompt()` + `getDynamicContext()`, add `_cache` + `invalidatePromptCache()` |
-| `src/core/Workflow.ts` | Use split prompts in `callModel` — static block with cache hint, dynamic block separate |
-| `src/core/providers/AnthropicProvider.ts` | Add `anthropic-beta` header + `cache_control` on static system block |
-| `src/core/providers/OpenAIProvider.ts` | Read back `cached_tokens` from usage metadata |
-| `src/core/ConfigManager.ts` | `recursionLimit` default: `50` → `15` |
-| `src/core/AppContext.tsx` | Add `cached: number` to `TokenUsage` + `UPDATE_USAGE` reducer |
-| `src/components/StatusHeader.tsx` | Display `💾 N cached` when cache hits > 0 |
-| `src/tools/system/memory.ts` | Call `invalidatePromptCache()` after `add`/`delete` |
-| `src/tools/system/skills.ts` | Call `invalidatePromptCache()` after `add`/`delete` |
-| `src/index.tsx` | Extract cache hit tokens in `processStream` (~line 454), dispatch to `UPDATE_USAGE` |
+| File | Change | Status |
+|---|---|---|
+| `src/core/Prompts.ts` | Split into `getStaticPrompt()` + `getDynamicContext()`, add `_cache` + `invalidatePromptCache()` | ✅ Done |
+| `src/core/Workflow.ts` | Use split prompts in `callModel` — static block with cache hint, dynamic block separate | ✅ Done |
+| `src/core/providers/AnthropicProvider.ts` | Add `anthropic-beta` header + `cache_control` on static system block | ✅ Done |
+| `src/core/providers/OpenAIProvider.ts` | Read back `cached_tokens` from usage metadata | ✅ Done |
+| `src/core/ConfigManager.ts` | `recursionLimit` default: `50` → `15` | ✅ Done |
+| `src/core/AppContext.tsx` | Add `cached: number` to `TokenUsage` + `UPDATE_USAGE` reducer | ✅ Done |
+| `src/components/StatusHeader.tsx` | Display `💾 N cached` when cache hits > 0 | ✅ Done |
+| `src/tools/system/memory.ts` | Call `invalidatePromptCache()` after `add`/`delete` | ✅ Done |
+| `src/tools/system/skills.ts` | Call `invalidatePromptCache()` after `add`/`delete` | ✅ Done |
+| `src/index.tsx` | Extract cache hit tokens in `processStream` (~line 454), dispatch to `UPDATE_USAGE` | ✅ Done |
 
 ---
 

@@ -169,7 +169,7 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 ### Why history wastes tokens
 Every session resume calls `hydrateCheckpointer` which loads messages from SQLite → stuffs them into `MemorySaver`. The `MemorySaver` concat reducer then grows unbounded all session. The system prompt is stored *inside* the checkpointer state AND re-injected every turn — burning one of the limited `shortTermMemoryLimit` slots twice.
 
-### 🔴 Fix H1 — Limit `getMessages()` at hydration time
+### ✅ Fix H1 — Limit `getMessages()` at hydration time *(done in PR #6)*
 **Problem:** `hydrateCheckpointer` calls `getMessages(sessionId)` with the default `limit: 100` — pumping up to 100 raw messages into `MemorySaver` on every session resume, regardless of `shortTermMemoryLimit`.
 
 **Solution:** Pass `shortTermMemoryLimit × 2` (accounts for tool pairs) to `getMessages()` at hydration:
@@ -185,14 +185,14 @@ const messages = getMessages(sessionId, configManager.getSettings().shortTermMem
 
 **Files:** `src/core/Workflow.ts` (post-slice truncation), `src/index.tsx` (checkpointer init)
 
-### 🟡 Fix H3 — Never store `SystemMessage` inside the checkpointer
+### ✅ Fix H3 — Never store `SystemMessage` inside the checkpointer *(done in PR #6)*
 **Problem:** `hydrateCheckpointer` prepends `new SystemMessage(getSystemPrompt())` into the messages array before calling `updateState()`. Then `callModel` injects the system prompt again at invocation time. The prompt is stored as `message[0]` in `MemorySaver` — permanently consuming 1 of N `shortTermMemoryLimit` slots.
 
 **Solution:** Strip all `SystemMessage` entries before calling `updateState()` in `hydrateCheckpointer`. System prompt is always injected fresh at `callModel` time — never persisted in state.
 
 **Files:** `src/index.tsx` (`hydrateCheckpointer`, line ~137–143)
 
-### 🟢 Fix H4 — Warn when `getMessages` silently hits the 100-message cap
+### ✅ Fix H4 — Warn when `getMessages` silently hits the 100-message cap *(done in PR #6)*
 **Problem:** If a session grows past 100 messages, `getMessages` silently returns only the first 100 and drops the rest, with no warning to the developer or user.
 
 **Solution:** After `stmt.all()`, check if `rows.length === limit` and log a warning:
@@ -208,10 +208,10 @@ if (rows.length === limit) console.warn(`[messages] Session ${sessionId} hit the
 ### 🔴 High Priority
 - [ ] **Fix symlink escape in `edit_file`** — replace `path.resolve` check with `fs.realpathSync` to prevent escaping the project directory via symlinks (`src/tools/system/edit_file.ts`)
 - [ ] **Deduplicate `Task`/`TaskStatus` types** — defined independently in both `AppContext.tsx` and `Workflow.ts`; export from one canonical location
-- [ ] **Update default Anthropic model ID** — `claude-3-5-sonnet-20240620` is outdated; update default in `AnthropicProvider.ts`
+- [x] **Update default Anthropic model ID** — `claude-3-5-sonnet-20240620` → `claude-3-5-sonnet-20241022` *(done in PR #6)*
 
 ### 🟡 Medium Priority
-- [ ] **Add logging to silent `hydrateCheckpointer` catch** — silent failure makes session restore bugs undiagnosable (`src/index.tsx`)
+- [x] **Add logging to silent `hydrateCheckpointer` catch** — now logs via `console.warn` *(done in PR #6)*
 - [ ] **Refactor `callModel` into named helpers** — the ~130-line function handles 5 distinct steps; extract each into a named helper for readability and testability (`src/core/Workflow.ts`)
 - [ ] **Refactor fire-and-forget async IIFEs in escape handler** — async IIFEs in `useInput` are untracked and may cause issues on unmount (`src/index.tsx`)
 - [ ] **Cache `SkillManager.loadSkills()` result** — currently re-reads all skill files from disk on every agent turn; add mtime-based caching (`src/core/SkillManager.ts`)
