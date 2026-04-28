@@ -337,3 +337,9 @@ Call `invalidatePromptCache()` in `memoryTool` and `skillsTool` after write oper
 **Solution:** Read `cache_read_input_tokens` / `cache_creation_input_tokens` from Anthropic response metadata and `usage.prompt_tokens_details.cached_tokens` from OpenAI. Display as a small indicator in `StatusHeader.tsx` (e.g. `💾 cache hit: 4,200 tok`).
 
 **Files:** `src/components/StatusHeader.tsx`, `src/core/providers/AnthropicProvider.ts`, `src/core/providers/OpenAIProvider.ts`
+
+## System Prompt Context Optimization (Target: 10-20k tokens)
+- [x] **Fix Relevant Memories (Top-K)**: Implemented keyword-based (TF-IDF style) Top-5 retrieval for core memories in `Workflow.ts`.
+- [x] **Recent Messages Context**: `truncateHistory` is used to provide a lean "Recent Messages" block.
+- [x] **Context Ordering**: Strict sequence enforced: `Static (Cached) -> Relevant Memories (Top-K) -> Recent Messages -> Selected Tools (Top-K)`.
+- [x] **Pruning**: Top-K retrieval for both memories and conversation RAG keeps prompt size stable.

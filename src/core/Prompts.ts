@@ -76,26 +76,20 @@ PLAN:
  * This part can change per-turn (memories updated, RAG context differs).
  * It should be injected as a separate, uncached block.
  *
- * Includes: core memories.
+ * Includes: core memories and conversation RAG.
  */
-export const getDynamicContext = (): string => {
-    try {
-        const memories = getCoreMemories();
-        if (memories.length === 0) return '';
+export const getDynamicContext = (relevantMemories?: string, relevantConversation?: string): string => {
+    let context = "";
 
-        const aiMemories = memories.filter(m => m.category === 'ai').map(m => `- ${m.content}`).join('\n');
-        const userMemories = memories.filter(m => m.category === 'user').map(m => `- ${m.content}`).join('\n');
-        const worldMemories = memories.filter(m => m.category === 'world').map(m => `- ${m.content}`).join('\n');
-
-        let memorySection = '\n\n--- CORE MEMORIES (YOUR SOUL) ---\n';
-        if (aiMemories) memorySection += `\nABOUT YOU (AI):\n${aiMemories}\n`;
-        if (userMemories) memorySection += `\nABOUT THE USER:\n${userMemories}\n`;
-        if (worldMemories) memorySection += `\nABOUT THE WORLD/PROJECT:\n${worldMemories}\n`;
-
-        return memorySection;
-    } catch {
-        return '';
+    if (relevantMemories) {
+        context += `\n\n--- RELEVANT CORE MEMORIES ---\n${relevantMemories}\n`;
     }
+
+    if (relevantConversation) {
+        context += `\n\n--- RELEVANT CONVERSATION CONTEXT ---\n${relevantConversation}\n[END CONTEXT]`;
+    }
+
+    return context;
 };
 
 /**
