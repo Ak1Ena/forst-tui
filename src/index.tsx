@@ -221,6 +221,7 @@ const App = () => {
                 // If we aborted while tools were pending, we MUST add ToolMessages to history
                 // otherwise Anthropic will error on the next message in this session.
                 if (state.pendingToolCall && Array.isArray(state.pendingToolCall)) {
+                    const toolMessages: ToolMessage[] = [];
                     for (const tc of state.pendingToolCall) {
                         const toolMsg: Message = {
                             role: 'tool',
@@ -230,7 +231,23 @@ const App = () => {
                         };
                         dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
                         saveMessage(sessionId, toolMsg);
+                        
+                        toolMessages.push(new ToolMessage({
+                            content: '🛑 Request aborted by user.',
+                            tool_call_id: tc.id,
+                            name: tc.name
+                        }));
                     }
+
+                    // Sync the LangGraph checkpointer state as well
+                    (async () => {
+                        try {
+                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+                            const config = { configurable: { thread_id: sessionId.toString() } };
+                            await appWorkflow.updateState(config, { messages: toolMessages });
+                        } catch (e) { /* ignore sync errors */ }
+                    })();
+
                     dispatch({ type: 'SET_PENDING_TOOL', payload: null });
                 }
 
