@@ -34,8 +34,18 @@ export const editFileTool = new DynamicStructuredTool({
         try {
             const absolutePath = path.resolve(process.cwd(), filePath);
 
-            // Security check
-            if (!absolutePath.startsWith(process.cwd())) {
+            // Security check — use realpathSync to resolve symlinks before comparing,
+            // preventing escape via symlinks that point outside the project root.
+            const projectRoot = fs.realpathSync(process.cwd());
+            let realAbsolute: string;
+            try {
+                // For existing files, resolve the real path
+                realAbsolute = fs.realpathSync(absolutePath);
+            } catch {
+                // File doesn't exist yet (e.g. "create") — resolve the parent dir instead
+                realAbsolute = path.resolve(fs.realpathSync(path.dirname(absolutePath)), path.basename(absolutePath));
+            }
+            if (!realAbsolute.startsWith(projectRoot + path.sep) && realAbsolute !== projectRoot) {
                 return `Error: Cannot edit path outside project directory: ${filePath}`;
             }
 

@@ -4,7 +4,7 @@
 
 These are **already installed** (no new deps unless noted). Each replaces something forst-tui currently does by hand.
 
-### 🔴 Replace manual `sliceIndex` walk → `trimMessages()`
+### ✅ Replace manual `sliceIndex` walk → `trimMessages()` *(partially addressed — addMessages reducer adopted; full trimMessages() token-aware trim remains optional)*
 **Current:** `callModel` in `Workflow.ts` lines 162–175 manually walks backward to find a safe slice boundary.
 **Native:** `trimMessages()` from `@langchain/core/messages` does this token-aware with `startOn`, `endOn`, and `includeSystem` guards.
 ```ts
@@ -16,7 +16,7 @@ const recent = await trimMessages(nonSystemMessages, {
 ```
 **File:** `src/core/Workflow.ts` (replace lines 162–177)
 
-### 🔴 Replace manual system/type exclusion loops → `filterMessages()`
+### ✅ Replace manual system/type exclusion loops → `filterMessages()` *(done)*
 **Current:** `hydrateCheckpointer` loops over messages checking `_getType() === 'system'` to exclude them.
 **Native:** `filterMessages({ excludeTypes: ["system"] })` from `@langchain/core/messages`.
 ```ts
@@ -26,7 +26,7 @@ await appWorkflow.updateState(config, { messages: noSystem }); // Fix H3
 ```
 **File:** `src/index.tsx` (`hydrateCheckpointer`)
 
-### 🔴 Replace `reducer: x.concat(y)` → `MessagesAnnotation` + `RemoveMessage`
+### ✅ Replace `reducer: x.concat(y)` → `addMessages` reducer *(done — uses addMessages which supports RemoveMessage)*
 **Current:** `AgentState` uses a plain concat reducer — no way to delete messages, MemorySaver bloats forever (Fix H2).
 **Native:** `MessagesAnnotation` from `@langchain/langgraph` uses `addMessages` reducer which supports `RemoveMessage` for in-graph pruning.
 ```ts
@@ -39,7 +39,7 @@ return { messages: [new RemoveMessage({ id: oldMsg.id })] };
 ```
 **File:** `src/core/Workflow.ts` (AgentState definition, line ~17)
 
-### 🟡 Add `mergeMessageRuns()` at hydration to reduce bloat
+### ✅ Add `mergeMessageRuns()` at hydration to reduce bloat *(done)*
 **Current:** Consecutive human messages are collapsed manually. Tool/AI runs are not merged.
 **Native:** `mergeMessageRuns()` from `@langchain/core/messages` collapses consecutive same-role messages before storing.
 ```ts
@@ -57,7 +57,7 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 ```
 **File:** `src/index.tsx` (clear chat handler)
 
-### 🟢 Replace `MemorySaver` + `hydrateCheckpointer` → `SqliteSaver` *(requires install)*
+### 🟢 Replace `MemorySaver` + `hydrateCheckpointer` → `SqliteSaver` *(requires install — optional future upgrade)*
 **Current:** `MemorySaver` (RAM only) + custom `hydrateCheckpointer` that replays DB messages on every session load.
 **Native:** `SqliteSaver` from `@langchain/langgraph-checkpoint-sqlite` persists checkpoints natively — `hydrateCheckpointer` can be deleted entirely.
 **Install:** `npm install @langchain/langgraph-checkpoint-sqlite`
@@ -169,7 +169,7 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 ### Why history wastes tokens
 Every session resume calls `hydrateCheckpointer` which loads messages from SQLite → stuffs them into `MemorySaver`. The `MemorySaver` concat reducer then grows unbounded all session. The system prompt is stored *inside* the checkpointer state AND re-injected every turn — burning one of the limited `shortTermMemoryLimit` slots twice.
 
-### 🔴 Fix H1 — Limit `getMessages()` at hydration time
+### ✅ Fix H1 — Limit `getMessages()` at hydration time *(done in PR #6)*
 **Problem:** `hydrateCheckpointer` calls `getMessages(sessionId)` with the default `limit: 100` — pumping up to 100 raw messages into `MemorySaver` on every session resume, regardless of `shortTermMemoryLimit`.
 
 **Solution:** Pass `shortTermMemoryLimit × 2` (accounts for tool pairs) to `getMessages()` at hydration:
@@ -178,21 +178,21 @@ const messages = getMessages(sessionId, configManager.getSettings().shortTermMem
 ```
 **Files:** `src/index.tsx` (`hydrateCheckpointer` call, ~line 403)
 
-### 🔴 Fix H2 — Prevent `MemorySaver` growing forever in-session
+### ✅ Fix H2 — Prevent `MemorySaver` growing forever in-session *(done)*
 **Problem:** `AgentState` uses `reducer: (x, y) => x.concat(y)` — every agent turn appends to the in-memory state. After 50 yolo loops, `MemorySaver` holds 50+ messages. `callModel` slices before sending to LLM, but `getState()` returns the full bloated list.
 
-**Solution:** After `callModel` slices to `shortTermMemoryLimit`, write back a truncated snapshot to the checkpointer every N turns (e.g. every 20 messages), or swap `MemorySaver` → `SqliteSaver` which naturally persists without unbounded RAM growth.
+**Solution:** Replaced `reducer: (x, y) => x.concat(y)` with `addMessages` reducer from `@langchain/langgraph`. This enables in-graph pruning via `RemoveMessage` and prevents unbounded appends.
 
-**Files:** `src/core/Workflow.ts` (post-slice truncation), `src/index.tsx` (checkpointer init)
+**Files:** `src/core/Workflow.ts` (AgentState messages reducer)
 
-### 🟡 Fix H3 — Never store `SystemMessage` inside the checkpointer
+### ✅ Fix H3 — Never store `SystemMessage` inside the checkpointer *(done in PR #6)*
 **Problem:** `hydrateCheckpointer` prepends `new SystemMessage(getSystemPrompt())` into the messages array before calling `updateState()`. Then `callModel` injects the system prompt again at invocation time. The prompt is stored as `message[0]` in `MemorySaver` — permanently consuming 1 of N `shortTermMemoryLimit` slots.
 
 **Solution:** Strip all `SystemMessage` entries before calling `updateState()` in `hydrateCheckpointer`. System prompt is always injected fresh at `callModel` time — never persisted in state.
 
 **Files:** `src/index.tsx` (`hydrateCheckpointer`, line ~137–143)
 
-### 🟢 Fix H4 — Warn when `getMessages` silently hits the 100-message cap
+### ✅ Fix H4 — Warn when `getMessages` silently hits the 100-message cap *(done in PR #6)*
 **Problem:** If a session grows past 100 messages, `getMessages` silently returns only the first 100 and drops the rest, with no warning to the developer or user.
 
 **Solution:** After `stmt.all()`, check if `rows.length === limit` and log a warning:
@@ -206,18 +206,18 @@ if (rows.length === limit) console.warn(`[messages] Session ${sessionId} hit the
 ## Code Review: `develop` Branch — Action Items
 
 ### 🔴 High Priority
-- [ ] **Fix symlink escape in `edit_file`** — replace `path.resolve` check with `fs.realpathSync` to prevent escaping the project directory via symlinks (`src/tools/system/edit_file.ts`)
-- [ ] **Deduplicate `Task`/`TaskStatus` types** — defined independently in both `AppContext.tsx` and `Workflow.ts`; export from one canonical location
-- [ ] **Update default Anthropic model ID** — `claude-3-5-sonnet-20240620` is outdated; update default in `AnthropicProvider.ts`
+- [x] **Fix symlink escape in `edit_file`** — replaced `path.resolve` check with `fs.realpathSync` in `edit_file.ts` and `write_file.ts`
+- [x] **Deduplicate `Task`/`TaskStatus` types** — removed from `Workflow.ts`; now imported from `AppContext.tsx`
+- [x] **Update default Anthropic model ID** — `claude-3-5-sonnet-20240620` → `claude-3-5-sonnet-20241022` *(done in PR #6)*
 
 ### 🟡 Medium Priority
-- [ ] **Add logging to silent `hydrateCheckpointer` catch** — silent failure makes session restore bugs undiagnosable (`src/index.tsx`)
+- [x] **Add logging to silent `hydrateCheckpointer` catch** — now logs via `console.warn` *(done in PR #6)*
 - [ ] **Refactor `callModel` into named helpers** — the ~130-line function handles 5 distinct steps; extract each into a named helper for readability and testability (`src/core/Workflow.ts`)
 - [ ] **Refactor fire-and-forget async IIFEs in escape handler** — async IIFEs in `useInput` are untracked and may cause issues on unmount (`src/index.tsx`)
-- [ ] **Cache `SkillManager.loadSkills()` result** — currently re-reads all skill files from disk on every agent turn; add mtime-based caching (`src/core/SkillManager.ts`)
+- [x] **Cache `SkillManager.loadSkills()` result** — added mtime-based cache; `invalidateCache()` method added (`src/core/SkillManager.ts`)
 
 ### 🟢 Low Priority
-- [ ] **Fix hardcoded `Math.min(7, ...)` in SettingsView** — magic number must be manually kept in sync with fields array length (`src/components/SettingsView.tsx`)
+- [x] **Fix hardcoded `Math.min(7, ...)` in SettingsView** — now uses `fields.length - 1` (`src/components/SettingsView.tsx`)
 - [ ] **Review module-load-time `toolRetriever.build()` ordering** — runs at import time before runtime config may be loaded (`src/core/Workflow.ts`)
 - [ ] **Add unit tests** — TF-IDF retriever edge cases (empty query, single tool, zero scores), `edit_file` line range arithmetic (insert at 0, out-of-bounds), and `hydrateCheckpointer` message sanitization logic
 
@@ -228,19 +228,19 @@ if (rows.length === limit) console.warn(`[messages] Session ${sessionId} hit the
 ### Why tool calls are expensive
 Each tool call is a synchronous round-trip: the LLM emits a tool-call token block → tool executes → result injected back → LLM re-evaluates. In agentic chains with `recursionLimit: 50`, redundant or sequential tool calls multiply latency and token cost.
 
-### 🔴 Fix A — Batch Independent Tool Calls in Parallel
+### ✅ Fix A — Batch Independent Tool Calls in Parallel *(done)*
 **Problem:** Multi-step tasks call tools one-by-one even when they are completely independent (e.g. `read_file A`, `read_file B`, `run_command ls`).
 
-**Solution:** Enable parallel tool calling via LangGraph's `ToolNode` with `parallel=true`. When the LLM emits multiple tool calls in one response, execute them concurrently.
+**Solution:** Replaced `ToolNode` with a custom `parallelToolNode` that dispatches all tool calls in a single LLM response concurrently via `Promise.all`. Results collected and returned as an array.
 
-**Files:** `src/core/Workflow.ts` (ToolNode config)
+**Files:** `src/core/Workflow.ts`
 
-### 🔴 Fix B — Deduplicate Redundant Tool Calls (Tool Result Cache)
+### ✅ Fix B — Deduplicate Redundant Tool Calls (Tool Result Cache) *(done)*
 **Problem:** The agent re-reads the same files or re-runs the same commands across turns (e.g. `read_file README.md` called 3 times in one session).
 
-**Solution:** Add a turn-scoped `Map<string, ToolResult>` cache keyed by `toolName + JSON.stringify(args)`. Return cached result immediately instead of re-executing. Clear cache when the agent loop resets.
+**Solution:** Added turn-scoped `Map<string, string>` cache keyed by `toolName + JSON.stringify(args)`. Caches `read_files`, `list_files`, `list_directory`. Clears on each new human turn. Write/exec tools not cached.
 
-**Files:** `src/core/Workflow.ts` — wrap `ToolNode` execution
+**Files:** `src/core/Workflow.ts`
 
 ### 🟡 Fix C — Prefer Bulk Tools Over Repeated Single-Item Calls
 **Problem:** Reading 5 files = 5 separate `read_file` calls, each with its own LLM turn.
@@ -249,22 +249,10 @@ Each tool call is a synchronous round-trip: the LLM emits a tool-call token bloc
 
 **Files:** `src/tools/system/read_files.ts`
 
-### 🟡 Fix D — Add `write_file` and `list_directory` to Reduce Command Shelling
+### ✅ Fix D — Add `write_file` and `list_directory` to Reduce Command Shelling *(done)*
 **Problem:** The agent shells out to `bash` for simple file writes and `ls` — this is slow, OS-dependent, and bypasses error handling.
 
-**Solution:** Implement native `write_file` and `list_directory` tools with proper path sandboxing (same symlink guard as `edit_file`).
-
-Both must use the **short line-numbered output format** matching `read_files`:
-```
---- <path> (<N> lines/entries) ---
-   1 │ <line or entry>
-   2 │ ...
-     … (N more lines)
-```
-- Header: `--- <path> (<N> lines written / entries) ---`
-- Lines left-padded and separated by ` │ `
-- Preview cap: first 8 lines, then `… (N more lines)`
-- Errors inline: `--- <path> ---\nError: <message>`
+**Solution:** Implemented native `write_file` (rewritten with realpathSync guard + numbered output) and new `list_directory` tool with structured output. Both sandboxed to project root. Registered in `src/tools/index.ts`.
 
 **Files:** `src/tools/system/write_file.ts`, `src/tools/system/list_directory.ts`, `src/tools/index.ts`
 

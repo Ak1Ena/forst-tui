@@ -64,11 +64,17 @@ export const saveMessage = (sessionId: number, message: Message, provider?: stri
 
 export const getMessages = (sessionId: number, limit: number = 100): Message[] => {
     const stmt = db.prepare(`
-        SELECT role, content, tool_calls, tool_call_id, name, args FROM messages 
+        SELECT role, content, tool_calls, tool_call_id, name, args FROM messages
         WHERE session_id = ?
         ORDER BY id ASC LIMIT ?
     `);
     const rows = stmt.all(sessionId, limit) as any[];
+
+    // H4: Warn when the query silently hits the cap — history may be incomplete
+    if (rows.length === limit) {
+        console.warn(`[messages] Session ${sessionId} hit the ${limit}-msg load cap — older messages not loaded.`);
+    }
+
     return rows.map(row => ({
         role: row.role as 'user' | 'assistant' | 'system' | 'tool',
         content: row.content,

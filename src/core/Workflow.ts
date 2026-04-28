@@ -1,22 +1,19 @@
-import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
+import { Annotation, MessagesAnnotation, StateGraph, START, END, addMessages } from "@langchain/langgraph";
 import { BaseMessage, SystemMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { getTools } from "../tools/index.js";
 import { BaseProvider } from "./providers/BaseProvider.js";
 import { toolRetriever } from "./ToolRetriever.js";
 import { vectorMemory } from "../database/vectorStore.js";
+import { getStaticPrompt, getDynamicContext } from "./Prompts.js";
+import { type Task, type TaskStatus } from "./AppContext.js";
 
-export type TaskStatus = 'pending' | 'in-progress' | 'completed' | 'failed';
-export type Task = {
-    id: string;
-    description: string;
-    status: TaskStatus;
-};
-
-// Define the state interface
+// ── AgentState ────────────────────────────────────────────────────────────────
+// Use addMessages reducer instead of plain concat — this enables in-graph
+// message pruning via RemoveMessage (Fix H2).
 export const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => x.concat(y),
+    reducer: addMessages,
     default: () => [],
   }),
   taskQueue: Annotation<Task[]>({
@@ -28,6 +25,9 @@ export const AgentState = Annotation.Root({
 // Build the TF-IDF tool index once at module load time.
 // getTools() returns the same registry array every call so this is safe.
 toolRetriever.build(getTools());
+
+// ── Read-only tools whose results can be safely deduplicated ──────────────────
+const CACHEABLE_TOOLS = new Set(['read_files', 'list_files', 'list_directory']);
 
 /**
  * Returns true if any message in the list is a tool result.
@@ -57,7 +57,7 @@ function getRetrievalQuery(msgs: BaseMessage[], currentTask?: Task): string {
 }
 
 export const createAgentWorkflow = (
-  provider: BaseProvider, 
+  provider: BaseProvider,
   interactionMode: 'approval' | 'auto-accept' | 'yolo',
   checkpointer?: any,
   shortTermMemoryLimit: number = 12
@@ -76,6 +76,12 @@ export const createAgentWorkflow = (
       return boundModelCache.get(key)!;
   };
 
+  // ── Turn-scoped tool result dedup cache (Fix B) ───────────────────────────
+  // Keyed by "toolName::JSON.stringify(sortedArgs)".
+  // Only caches CACHEABLE_TOOLS (read-only). Never caches write/exec tools.
+  // Reset at the start of each new human turn (cleared in callModel).
+  const toolResultCache = new Map<string, string>();
+
   // Define the function that determines whether to continue or not
   const shouldContinue = (state: typeof AgentState.State) => {
     const { messages, taskQueue } = state;
@@ -88,7 +94,7 @@ export const createAgentWorkflow = (
 
     // Check if there are still pending or in-progress tasks
     const hasMoreTasks = taskQueue.some(t => t.status === 'pending' || t.status === 'in-progress');
-    
+
     if (hasMoreTasks) {
         if (interactionMode === 'yolo') {
             return "agent";
@@ -101,14 +107,23 @@ export const createAgentWorkflow = (
     return END;
   };
 
-  // Define the function that calls the model
+  // plannerMode is passed via config.configurable or falls back to false
   const callModel = async (state: typeof AgentState.State, config?: any) => {
+    const plannerMode: boolean = config?.configurable?.plannerMode ?? false;
     const { messages, taskQueue } = state;
+
+    // Clear the dedup cache at the start of each human turn so stale reads
+    // from a previous exchange don't leak into the current one.
+    const lastHumanIdx = [...messages].reverse().findIndex(m => m._getType() === 'human');
+    if (lastHumanIdx === 0) {
+        // The most-recent message IS the new human turn — fresh request.
+        toolResultCache.clear();
+    }
 
     // --- 0. Retrieve Relevant Context (Dual-Query + Threshold) ---
     const rawQuery = getRetrievalQuery(messages, taskQueue.find(t => t.status === 'in-progress'));
     let relevantContext = "";
-    
+
     if (rawQuery) {
         // Dual query: Raw + Lightweight Rewrite
         const queries = [
@@ -117,7 +132,7 @@ export const createAgentWorkflow = (
         ];
 
         const results = await Promise.all(queries.map(q => vectorMemory.search(q, 5, 0.5)));
-        
+
         // Flatten, Deduplicate by content, and format
         const seen = new Set<string>();
         const uniqueDocs = results.flat().filter(doc => {
@@ -134,30 +149,22 @@ export const createAgentWorkflow = (
         }
     }
 
-    // --- 1. Sanitize messages for Anthropic/strict providers ---
-    let systemContent = "";
-    const nonSystemMessages: BaseMessage[] = [];
-    
-    for (const m of messages) {
-        if (m._getType() === 'system') {
-            const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-            if (!systemContent.includes(content)) {
-                if (systemContent) systemContent += "\n\n";
-                systemContent += content;
-            }
-        } else {
-            nonSystemMessages.push(m);
-        }
+    // --- 1. Build system prompt from split static + dynamic layers ---
+    // Strip any SystemMessage already in state (they were stored from a previous turn).
+    // We always reconstruct fresh so the static block can be cache-controlled.
+    const nonSystemMessages: BaseMessage[] = messages.filter(m => m._getType() !== 'system');
+
+    // Build dynamic part: memories + RAG context
+    let dynamicParts = getDynamicContext();
+
+    // Inject relevant context into dynamic part
+    if (relevantContext) {
+        dynamicParts += "\n\n[RELEVANT CONVERSATION CONTEXT]\n" + relevantContext + "\n[END CONTEXT]";
     }
 
-    // Inject relevant context into system content
-    if (relevantContext) {
-        const contextHeader = "\n\n[RELEVANT CONVERSATION CONTEXT]\n" + relevantContext + "\n[END CONTEXT]";
-        if (!systemContent.includes("[RELEVANT CONVERSATION CONTEXT]")) {
-            systemContent += contextHeader;
-        }
-    }
-    
+    // Static prompt — stable per session, safe for Anthropic cache_control
+    const staticText = getStaticPrompt(plannerMode);
+
     // TRUNCATE: Using dynamic limit from settings
     let sliceIndex = Math.max(0, nonSystemMessages.length - shortTermMemoryLimit);
 
@@ -166,23 +173,36 @@ export const createAgentWorkflow = (
     while (sliceIndex > 0) {
         const firstMsg = nonSystemMessages[sliceIndex];
         const type = firstMsg._getType();
-        
+
         // If it's a Human message, it's a safe place to start.
         if (type === 'human') break;
-        
+
         // If it's a Tool message or an AI message with tool calls, we MUST go back further.
         sliceIndex--;
     }
 
     const recentMessages = nonSystemMessages.slice(sliceIndex);
 
-    let activeMessages: BaseMessage[] = systemContent 
-        ? [new SystemMessage(systemContent), ...recentMessages]
-        : recentMessages;
+    // Build the system message.
+    // The static block gets a cache_control hint so Anthropic caches it for 5 minutes.
+    // The dynamic block (memories + RAG) is never cached since it changes per-turn.
+    const systemBlocks: any[] = [
+        {
+            type: "text",
+            text: staticText,
+            cache_control: { type: "ephemeral" }   // Anthropic prompt caching
+        },
+    ];
+    if (dynamicParts) {
+        systemBlocks.push({ type: "text", text: dynamicParts });
+    }
+
+    const systemMsg = new SystemMessage({ content: systemBlocks });
+    let activeMessages: BaseMessage[] = [systemMsg, ...recentMessages];
 
     // --- 0.1 Sanitize for Anthropic: Every tool_use MUST have a tool_result ---
-    // If the sequence ends with an AI message containing tool calls, it means the 
-    // previous run was likely interrupted before tools could execute. 
+    // If the sequence ends with an AI message containing tool calls, it means the
+    // previous run was likely interrupted before tools could execute.
     // We append a "cancelled" result for each to satisfy strict provider requirements.
     const sanitizedMessages: BaseMessage[] = [];
     for (let i = 0; i < activeMessages.length; i++) {
@@ -241,9 +261,20 @@ export const createAgentWorkflow = (
 
         const firstMsg = activeMessages[0];
         if (firstMsg && firstMsg._getType() === 'system') {
-            const existing = typeof firstMsg.content === 'string' ? firstMsg.content : '';
-            if (!existing.includes(`[CURRENT TASK] (ID: ${currentTask.id})`)) {
-                activeMessages[0] = new SystemMessage(`${existing}\n\n${taskContext}`);
+            // Append to the system message (dynamic text block, not cached)
+            const existingContent = firstMsg.content;
+            if (Array.isArray(existingContent)) {
+                // Check if task context already injected
+                const hasTask = existingContent.some((b: any) => typeof b.text === 'string' && b.text.includes(`[CURRENT TASK] (ID: ${currentTask.id})`));
+                if (!hasTask) {
+                    const newBlocks = [...existingContent, { type: "text", text: taskContext }];
+                    activeMessages[0] = new SystemMessage({ content: newBlocks });
+                }
+            } else {
+                const existing = typeof existingContent === 'string' ? existingContent : '';
+                if (!existing.includes(`[CURRENT TASK] (ID: ${currentTask.id})`)) {
+                    activeMessages[0] = new SystemMessage(`${existing}\n\n${taskContext}`);
+                }
             }
         } else {
             activeMessages = [new SystemMessage(taskContext), ...activeMessages];
@@ -280,9 +311,17 @@ export const createAgentWorkflow = (
             if (catalog) {
                 const firstMsg = activeMessages[0];
                 if (firstMsg && firstMsg._getType() === 'system') {
-                    const existing = typeof firstMsg.content === 'string' ? firstMsg.content : '';
-                    if (!existing.includes('[AVAILABLE TOOLS]')) {
-                        activeMessages[0] = new SystemMessage(`${existing}\n\n${catalog}`);
+                    const existingContent = firstMsg.content;
+                    if (Array.isArray(existingContent)) {
+                        const hasCatalog = existingContent.some((b: any) => typeof b.text === 'string' && b.text.includes('[AVAILABLE TOOLS]'));
+                        if (!hasCatalog) {
+                            activeMessages[0] = new SystemMessage({ content: [...existingContent, { type: "text", text: catalog }] });
+                        }
+                    } else {
+                        const existing = typeof existingContent === 'string' ? existingContent : '';
+                        if (!existing.includes('[AVAILABLE TOOLS]')) {
+                            activeMessages[0] = new SystemMessage(`${existing}\n\n${catalog}`);
+                        }
                     }
                 } else {
                     activeMessages = [new SystemMessage(catalog), ...activeMessages];
@@ -298,10 +337,66 @@ export const createAgentWorkflow = (
     };
   };
 
+  // ── Parallel tool execution with turn-scoped dedup cache (Fix A + B) ────────
+  // Wraps every tool call: cacheable reads return instantly on cache hit;
+  // all calls in a single LLM response are dispatched concurrently.
+  const parallelToolNode = async (state: typeof AgentState.State, config?: any) => {
+    const lastMessage = state.messages[state.messages.length - 1];
+    if (!lastMessage || !(lastMessage as any).tool_calls?.length) {
+        return { messages: [] };
+    }
+
+    const toolCalls: any[] = (lastMessage as any).tool_calls;
+    const toolMap = new Map(tools.map((t: any) => [t.name, t]));
+
+    // Dispatch all tool calls concurrently
+    const results = await Promise.all(
+        toolCalls.map(async (tc: any) => {
+            const tool = toolMap.get(tc.name);
+            if (!tool) {
+                return new ToolMessage({
+                    content: `Error: Unknown tool "${tc.name}"`,
+                    tool_call_id: tc.id || 'unknown',
+                    name: tc.name,
+                });
+            }
+
+            // Dedup cache — only for safe read-only tools
+            if (CACHEABLE_TOOLS.has(tc.name)) {
+                const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
+                if (toolResultCache.has(cacheKey)) {
+                    return new ToolMessage({
+                        content: toolResultCache.get(cacheKey)!,
+                        tool_call_id: tc.id || 'unknown',
+                        name: tc.name,
+                    });
+                }
+                const result = await tool.invoke(tc.args, config);
+                toolResultCache.set(cacheKey, result);
+                return new ToolMessage({
+                    content: result,
+                    tool_call_id: tc.id || 'unknown',
+                    name: tc.name,
+                });
+            }
+
+            // Non-cacheable: invoke directly
+            const result = await tool.invoke(tc.args, config);
+            return new ToolMessage({
+                content: typeof result === 'string' ? result : JSON.stringify(result),
+                tool_call_id: tc.id || 'unknown',
+                name: tc.name,
+            });
+        })
+    );
+
+    return { messages: results };
+  };
+
   // Define a new graph
   const workflow = new StateGraph(AgentState)
     .addNode("agent", callModel)
-    .addNode("tools", new ToolNode(tools))
+    .addNode("tools", parallelToolNode)
     .addEdge(START, "agent")
     .addConditionalEdges("agent", shouldContinue)
     .addEdge("tools", "agent");

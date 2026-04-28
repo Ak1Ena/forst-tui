@@ -10,9 +10,14 @@ export class AnthropicProvider extends BaseProvider {
         super(options);
         this.model = new ChatAnthropic({
             apiKey: options.apiKey,
-            modelName: options.model || "claude-3-5-sonnet-20240620",
+            // Updated to current claude-3-5-sonnet model
+            modelName: options.model || "claude-3-5-sonnet-20241022",
             clientOptions: {
                 baseURL: options.baseUrl,
+                // Enable Anthropic prompt caching beta
+                defaultHeaders: {
+                    "anthropic-beta": "prompt-caching-2024-07-31",
+                }
             }
         });
     }

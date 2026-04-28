@@ -3,6 +3,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import fs from 'fs';
 import path from 'path';
 import { SKILLS_DIR } from '../../core/ConfigManager.js';
+import { invalidatePromptCache } from '../../core/Prompts.js';
 
 export const skillsTool = new DynamicStructuredTool({
     name: 'manage_skills',
@@ -32,6 +33,7 @@ export const skillsTool = new DynamicStructuredTool({
                 if (!skillName || !content) return 'Error: skillName and content are required for "add".';
                 const filePath = path.join(SKILLS_DIR, `${skillName}.md`);
                 fs.writeFileSync(filePath, content, 'utf-8');
+                invalidatePromptCache();
                 return `Successfully added skill: ${skillName}. I will now use these instructions in future responses.`;
             }
 
@@ -40,6 +42,7 @@ export const skillsTool = new DynamicStructuredTool({
                 const filePath = path.join(SKILLS_DIR, `${skillName}.md`);
                 if (!fs.existsSync(filePath)) return `Skill "${skillName}" not found.`;
                 fs.unlinkSync(filePath);
+                invalidatePromptCache();
                 return `Successfully deleted skill: ${skillName}`;
             }
 

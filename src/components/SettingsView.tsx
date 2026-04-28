@@ -62,10 +62,10 @@ export const SettingsView = ({ onClose }: Props) => {
             return;
         }
 
+        const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode'];
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
-        if (key.downArrow) setSelectedIndex(Math.min(8, selectedIndex + 1));
+        if (key.downArrow) setSelectedIndex(Math.min(fields.length - 1, selectedIndex + 1));
         if (key.return) {
-            const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode'];
             const field = fields[selectedIndex];
             setEditField(field);
             if (field === 'type') {
