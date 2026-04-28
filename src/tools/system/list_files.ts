@@ -11,7 +11,10 @@ export const listFilesTool = new DynamicTool({
             const absolutePath = path.resolve(process.cwd(), targetPath);
             const entries = await fs.readdir(absolutePath, { withFileTypes: true });
             
-            const list = entries.map(entry => {
+            const IGNORED = ['node_modules', '.git', 'dist', 'build', '.next', 'out'];
+            const list = entries
+                .filter(entry => !IGNORED.includes(entry.name))
+                .map(entry => {
                 const type = entry.isDirectory() ? "[DIR]" : "[FILE]";
                 return `${type} ${entry.name}`;
             });
