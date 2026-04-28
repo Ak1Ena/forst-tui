@@ -175,7 +175,7 @@ export const createAgentWorkflow = (
     // --- 3. Inject ONLY the current in-progress task into the system prompt ---
     const currentTask = updatedQueue.find(t => t.status === 'in-progress');
 
-    if (currentTask) {
+    if (currentTask && currentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
         const taskContext =
             `[CURRENT TASK] (ID: ${currentTask.id})\n${currentTask.description}\n\n` +

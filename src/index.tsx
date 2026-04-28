@@ -218,6 +218,12 @@ const App = () => {
                     // Ignore errors during abort
                 }
 
+                // If we aborted, any in-progress tasks should be marked as failed
+                const inProgressTask = state.taskQueue.find(t => t.status === 'in-progress');
+                if (inProgressTask) {
+                    dispatch({ type: 'UPDATE_TASK', payload: { id: inProgressTask.id, status: 'failed' } });
+                }
+
                 // If we aborted while tools were pending, we MUST add ToolMessages to history
                 // otherwise Anthropic will error on the next message in this session.
                 if (state.pendingToolCall && Array.isArray(state.pendingToolCall)) {
@@ -240,15 +246,34 @@ const App = () => {
                     }
 
                     // Sync the LangGraph checkpointer state as well
+                    // We also sync the taskQueue update
                     (async () => {
                         try {
                             const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
                             const config = { configurable: { thread_id: sessionId.toString() } };
-                            await appWorkflow.updateState(config, { messages: toolMessages });
+                            const updatedQueue = state.taskQueue.map(t => 
+                                t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
+                            );
+                            await appWorkflow.updateState(config, { 
+                                messages: toolMessages,
+                                taskQueue: updatedQueue
+                            });
                         } catch (e) { /* ignore sync errors */ }
                     })();
 
                     dispatch({ type: 'SET_PENDING_TOOL', payload: null });
+                } else if (inProgressTask) {
+                    // Even if no tool call was pending, sync the failed task state
+                    (async () => {
+                        try {
+                            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer);
+                            const config = { configurable: { thread_id: sessionId.toString() } };
+                            const updatedQueue = state.taskQueue.map(t => 
+                                t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
+                            );
+                            await appWorkflow.updateState(config, { taskQueue: updatedQueue });
+                        } catch (e) { /* ignore sync errors */ }
+                    })();
                 }
 
                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Request aborted by user.' } });
