@@ -22,7 +22,7 @@ import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
-import { HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns, BaseMessage } from '@langchain/core/messages';
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
 import { Client } from "langsmith";
@@ -281,7 +281,7 @@ const App = () => {
                     state.interactionMode,
                     checkpointer,
                     configManager.getSettings().shortTermMemoryLimit,
-                    { messages: [new REMOVE_ALL_MESSAGES()] }
+                    { messages: [REMOVE_ALL_MESSAGES as any] }
                 );
             }
             if (key.upArrow) {
@@ -595,7 +595,7 @@ const App = () => {
                     state.interactionMode,
                     checkpointer,
                     configManager.getSettings().shortTermMemoryLimit,
-                    { messages: [new REMOVE_ALL_MESSAGES()] }
+                    { messages: [REMOVE_ALL_MESSAGES as any] }
                 );
                 return;
             }
