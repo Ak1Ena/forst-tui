@@ -13,6 +13,7 @@ export const SettingsView = ({ onClose }: Props) => {
     const [editField, setEditField] = useState<string | null>(null);
     const [tempValue, setTempValue] = useState('');
     const [restartRequired, setRestartRequired] = useState(false);
+    const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
 
     const activeProvider = settings.providers[0]; // For now, edit the first one
 
@@ -82,9 +83,14 @@ export const SettingsView = ({ onClose }: Props) => {
         if (key.return) {
             const field = fields[selectedIndex];
             if (field === 'deleteModel') {
+                setDeleteStatus('Deleting...');
                 import('../database/vectorStore.js').then(({ vectorMemory }) => {
                     vectorMemory.deleteLocalModel().then(() => {
-                        // Success
+                        setDeleteStatus('DELETED');
+                        setTimeout(() => setDeleteStatus(null), 3000);
+                    }).catch(() => {
+                        setDeleteStatus('ERROR');
+                        setTimeout(() => setDeleteStatus(null), 3000);
                     });
                 });
                 return;
@@ -213,7 +219,7 @@ export const SettingsView = ({ onClose }: Props) => {
                          label === 'Type' ? (value || 'gemini').toUpperCase() :
                          label === 'Interaction Mode' ? (value || 'yolo').toUpperCase() :
                          label === 'Embedding Mode' ? (value || 'local').toUpperCase() :
-                         label === 'Delete Local Model' ? 'PRESS ENTER TO DELETE' :
+                         label === 'Delete Local Model' ? (deleteStatus || 'PRESS ENTER TO DELETE') :
                          (label === 'Coworker Planner' || label === 'Memory (Related Context)' || label === 'System Prompt') ? (value ? 'ENABLED' : 'DISABLED') :
                          value || '(empty)'}
                     </Text>

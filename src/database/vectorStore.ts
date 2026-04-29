@@ -95,9 +95,18 @@ export class VectorMemory {
 
     async deleteLocalModel() {
         const cacheDir = env.cacheDir;
-        const modelPath = path.join(cacheDir, LOCAL_MODEL_ID.replace('/', '--'));
-        if (fs.existsSync(modelPath)) {
-            fs.rmSync(modelPath, { recursive: true, force: true });
+        const modelId = LOCAL_MODEL_ID;
+        
+        // Try both folder structures: "Xenova/model" and "Xenova--model"
+        const pathsToTry = [
+            path.join(cacheDir, modelId),
+            path.join(cacheDir, modelId.replace('/', '--'))
+        ];
+
+        for (const modelPath of pathsToTry) {
+            if (fs.existsSync(modelPath)) {
+                fs.rmSync(modelPath, { recursive: true, force: true });
+            }
         }
     }
 
