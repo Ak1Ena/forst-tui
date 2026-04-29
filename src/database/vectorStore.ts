@@ -9,6 +9,7 @@ import path from "path";
 import fs from "fs";
 import { GLOBAL_DIR, configManager } from "../core/ConfigManager.js";
 import { env } from "@huggingface/transformers";
+import { searchMessages } from "./messages.js";
 
 // Prevent FAISS from crashing due to threading issues in some environments
 process.env.OMP_NUM_THREADS = "1";
@@ -140,9 +141,16 @@ export class VectorMemory {
         }
     }
 
-    async search(query: string, k: number = 4, threshold: number = 0.5) {
+    async search(query: string, k: number = 4, threshold: number = 0.5): Promise<Document[]> {
         const settings = configManager.getSettings();
-        if (settings.embeddingMode === 'none') return [];
+        
+        if (settings.embeddingMode === 'none') {
+            const results = searchMessages(query, k);
+            return results.map(m => new Document({
+                pageContent: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                metadata: { role: m.role, source: 'keyword_search' }
+            }));
+        }
 
         await this.init();
         if (!this.vectorStore || !query) return [];

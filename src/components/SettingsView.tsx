@@ -80,13 +80,16 @@ export const SettingsView = ({ onClose }: Props) => {
         const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode', 'memoryInjection', 'systemPromptInjection', 'embeddingMode', 'deleteModel'];
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
         if (key.downArrow) setSelectedIndex(Math.min(fields.length - 1, selectedIndex + 1));
-        if (key.return) {
-            const field = fields[selectedIndex];
             if (field === 'deleteModel') {
                 setDeleteStatus('Deleting...');
                 import('../database/vectorStore.js').then(({ vectorMemory }) => {
                     vectorMemory.deleteLocalModel().then(() => {
                         setDeleteStatus('DELETED');
+                        // Update settings to 'none' and save
+                        const newSettings = { ...settings, embeddingMode: 'none' as const };
+                        setSettings(newSettings);
+                        configManager.save(newSettings);
+                        setRestartRequired(true);
                         setTimeout(() => setDeleteStatus(null), 3000);
                     }).catch(() => {
                         setDeleteStatus('ERROR');
