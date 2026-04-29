@@ -304,11 +304,16 @@ export const createAgentWorkflow = (
         taskContext += `\n` + (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
             `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
 
-        const firstMsg = activeMessages[0] as SystemMessage;
-        if (Array.isArray(firstMsg.content)) {
-            activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: taskContext }] });
+        if (activeMessages.length > 0 && activeMessages[0] instanceof SystemMessage) {
+            const firstMsg = activeMessages[0];
+            if (Array.isArray(firstMsg.content)) {
+                activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: taskContext }] });
+            } else {
+                activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${taskContext}`);
+            }
         } else {
-            activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${taskContext}`);
+            // Prepend a new system message if none exists at the start
+            activeMessages = [new SystemMessage(taskContext), ...activeMessages];
         }
     }
 
@@ -326,11 +331,15 @@ export const createAgentWorkflow = (
             chosenModel = model;
             const catalog = toolRetriever.getCatalog();
             if (catalog) {
-                const firstMsg = activeMessages[0] as SystemMessage;
-                if (Array.isArray(firstMsg.content)) {
-                    activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: catalog }] });
+                if (activeMessages.length > 0 && activeMessages[0] instanceof SystemMessage) {
+                    const firstMsg = activeMessages[0];
+                    if (Array.isArray(firstMsg.content)) {
+                        activeMessages[0] = new SystemMessage({ content: [...firstMsg.content, { type: "text", text: catalog }] });
+                    } else {
+                        activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${catalog}`);
+                    }
                 } else {
-                    activeMessages[0] = new SystemMessage(`${firstMsg.content}\n\n${catalog}`);
+                    activeMessages = [new SystemMessage(catalog), ...activeMessages];
                 }
             }
         }
