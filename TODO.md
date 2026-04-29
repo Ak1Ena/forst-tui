@@ -124,24 +124,24 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 - [x] Implement a **Dynamic Sidebar** for system stats and active background tasks
 - [x] Create a **Two-Column Layout** (Left: Chat, Right: Tools & System Info)
 - [x] Add a **Header Dashboard** with real-time status icons (LLM Status, DB connection, Network)
-- [ ] Implement **Tabs/Views** to switch between Chat, History, and Settings
+- [x] Implement **Tabs/Views** to switch between Chat, History, and Settings
 
 ## Phase 11: Visual Polish & Aesthetics
-- [ ] Integrate **Gradients and Themes** (e.g., Support for 'Nord', 'Dracula', 'Monokai' color schemes)
+- [x] Integrate **Gradients and Themes** (e.g., Support for 'Nord', 'Dracula', 'Monokai' color schemes)
 - [x] Add **Animated Spinners** and progress bars for LLM "Thinking" and Tool "Acting" states
 - [x] Implement **Syntax Highlighting** for code blocks within the ChatView
 - [x] Use **Icons/Symbols** (Lucide-style) for different message types (User 👤, AI 🤖, Tool 🛠️, System ⚙️)
 
 ## Phase 12: Rich Content Rendering
-- [ ] Implement **Markdown Parsing** for bold, italic, and list items in chat messages
+- [x] Implement **Markdown Parsing** for bold, italic, and list items in chat messages
 - [x] Create a **Table Component** for displaying structured tool outputs (e.g., file lists, process info)
 - [x] Add **Scroll Indicators** and better viewport management for long conversations
-- [ ] Implement **Breadcrumbs** for showing the current chain of thought/tool execution path
+- [x] Implement **Breadcrumbs** for showing the current chain of thought/tool execution path
 
 ## Phase 13: Interactive Experience
 - [x] Add **Keyboard Shortcuts** (e.g., `Ctrl+L` to clear chat)
 - [x] Implement a **Command Palette** (accessible via `/`) for quick actions (change provider, clear chat, toggle heartbeat)
-- [ ] Create **Modal/Overlay** support for settings and detailed tool logs
+- [x] Create **Modal/Overlay** support for settings and detailed tool logs
 - [X] Add **Sound/Notification support** (optional) for background task alerts
 
 ## Phase 14: Dynamic Configuration System
@@ -160,9 +160,9 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 - [x] Configure LangSmith environment variables for tracing and observability
 
 ## Phase 16: Coworker Mode Enhancements
-- [ ] **Recursive Task Management** — Allow Coworker mode to create and start tasks with a specific `recursiveLimit`.
-    - [ ] Use the user's defined recursion limit for single tasks by default.
-    - [ ] If a task fails or hits the limit, implement a "Request User Intervention" flow to ask how to proceed.
+- [x] **Recursive Task Management** — Allow Coworker mode to create and start tasks with a specific `recursiveLimit`.
+    - [x] Use the user's defined recursion limit for single tasks by default.
+    - [x] If a task fails or hits the limit, implement a "Request User Intervention" flow to ask how to proceed.
 
 ## History Saver Optimization
 
@@ -242,7 +242,7 @@ Each tool call is a synchronous round-trip: the LLM emits a tool-call token bloc
 
 **Files:** `src/core/Workflow.ts`
 
-### 🟡 Fix C — Prefer Bulk Tools Over Repeated Single-Item Calls
+### ✅ Fix C — Prefer Bulk Tools Over Repeated Single-Item Calls
 **Problem:** Reading 5 files = 5 separate `read_file` calls, each with its own LLM turn.
 
 **Solution:** Extend `read_files` to accept an array of paths and return all results in one call. Update tool description so the LLM knows to prefer bulk over single.
@@ -256,7 +256,7 @@ Each tool call is a synchronous round-trip: the LLM emits a tool-call token bloc
 
 **Files:** `src/tools/system/write_file.ts`, `src/tools/system/list_directory.ts`, `src/tools/index.ts`
 
-### 🟢 Fix E — Add Tool Usage Stats to StatusHeader
+### ✅ Fix E — Add Tool Usage Stats to StatusHeader
 **Problem:** No visibility into which tools are called how often or how much time they consume.
 
 **Solution:** Track per-tool call count + cumulative ms in `AppContext`. Display top tool + call count in `StatusHeader` (e.g. `🛠 read_files ×12 | run_command ×4`). Reset on chat clear.
@@ -271,7 +271,7 @@ Each tool call is a synchronous round-trip: the LLM emits a tool-call token bloc
 Every LLM call is stateless — the app must resend `System Prompt + Full History + New Message` on every single turn.
 In `yolo` + `plannerMode` with `recursionLimit: 50`, a single user request can chain 50 agentic loops, each paying the full context cost.
 
-### 🔴 Fix 1 — Split & Freeze the System Prompt (biggest win)
+### ✅ Fix 1 — Split & Freeze the System Prompt (biggest win)
 **Problem:** `getSystemPrompt()` rebuilds the entire prompt on every turn, mixing static rules with dynamic data (memories, skills, task context). This prevents any caching.
 
 **Solution:** Split into two layers:
@@ -280,7 +280,7 @@ In `yolo` + `plannerMode` with `recursionLimit: 50`, a single user request can c
 
 **Files:** `src/core/Prompts.ts`, `src/core/Workflow.ts`
 
-### 🔴 Fix 2 — Enable Anthropic Prompt Caching
+### ✅ Fix 2 — Enable Anthropic Prompt Caching
 **Problem:** `AnthropicProvider.ts` sends raw `SystemMessage` with no cache hints — Anthropic re-processes the full system prompt on every turn.
 
 **Solution:** Use `cache_control: { type: "ephemeral" }` on the static system prompt block. Anthropic caches any content block ≥ 1,024 tokens for 5 minutes, charging only 10% of normal input cost on cache hits.
@@ -297,14 +297,14 @@ new SystemMessage({
 
 **Files:** `src/core/providers/AnthropicProvider.ts`, `src/core/Prompts.ts`
 
-### 🔴 Fix 3 — Enable OpenAI Prompt Caching
+### ✅ Fix 3 — Enable OpenAI Prompt Caching
 **Problem:** OpenAI (GPT-4o, o-series) auto-caches prompts ≥ 1,024 tokens, but only if the **prefix is identical** across calls. The current dynamic prompt rebuilds break prefix stability.
 
 **Solution:** Once Fix 1 splits the prompt, ensure the static prefix is always identical and always placed first — OpenAI caching kicks in automatically with no API changes needed. Add `cached_tokens` read-back from `usage` to verify hits.
 
 **Files:** `src/core/providers/OpenAIProvider.ts` (read `usage.prompt_tokens_details.cached_tokens`)
 
-### 🟡 Fix 4 — Cache the System Prompt String in Memory
+### ✅ Fix 4 — Cache the System Prompt String in Memory
 **Problem:** `getSystemPrompt()` calls `getCoreMemories()` + `SkillManager.loadSkills()` (disk I/O) on **every agent turn**.
 
 **Solution:** Cache the result in a module-level variable, invalidate only when memories/skills are explicitly modified via their tools.
@@ -324,14 +324,14 @@ Call `invalidatePromptCache()` in `memoryTool` and `skillsTool` after write oper
 
 **Files:** `src/core/Prompts.ts`, `src/tools/system/memory.ts`, `src/tools/system/skills.ts`
 
-### 🟡 Fix 5 — Lower Default `recursionLimit`
+### ✅ Fix 5 — Lower Default `recursionLimit`
 **Problem:** Default of 50 allows 50 full-context LLM calls per user message in `yolo` mode.
 
 **Solution:** Lower default to `15`. Most tasks complete in under 10 steps. Power users can raise it in Settings.
 
 **Files:** `src/core/ConfigManager.ts` (change default from `50` → `15`)
 
-### 🟢 Fix 6 — Display Cache Hit Stats in StatusHeader
+### ✅ Fix 6 — Display Cache Hit Stats in StatusHeader
 **Problem:** No visibility into whether caching is working.
 
 **Solution:** Read `cache_read_input_tokens` / `cache_creation_input_tokens` from Anthropic response metadata and `usage.prompt_tokens_details.cached_tokens` from OpenAI. Display as a small indicator in `StatusHeader.tsx` (e.g. `💾 cache hit: 4,200 tok`).
@@ -382,8 +382,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R1 — `index_repo` Tool (One-Time Repo Scanner)
-**Status:** 🔴 Not started
+### ✅ Fix R1 — `index_repo` Tool (One-Time Repo Scanner)
+**Status:** ✅ Done
 
 **What it does:**
 - Walks the repo folder by folder
@@ -399,9 +399,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R2 — Staleness Detection & Incremental Re-index
-**Status:** 🔴 Not started  
-**Depends on:** Fix R1
+### ✅ Fix R2 — Staleness Detection & Incremental Re-index
+**Status:** ✅ Done
 
 **What it does:**
 - On session start, check each `.forst/summaries/*.md` hash against current file mtimes
@@ -420,9 +419,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R3 — Auto-inject `repo-index.md` into Static System Prompt
-**Status:** 🔴 Not started  
-**Depends on:** Fix R1
+### ✅ Fix R3 — Auto-inject `repo-index.md` into Static System Prompt
+**Status:** ✅ Done
 
 **What it does:**
 - On session start, if `.forst/repo-index.md` exists, load it and append to the static system prompt
@@ -434,9 +432,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R4 — Smart `read_files` Guard (Suggest Summary First)
-**Status:** 🔴 Not started  
-**Depends on:** Fix R1
+### ✅ Fix R4 — Smart `read_files` Guard (Suggest Summary First)
+**Status:** ✅ Done
 
 **What it does:**
 - When agent calls `read_files` on a source file, check if a folder summary exists for its parent folder
@@ -450,8 +447,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R5 — Post-Edit Targeted Validation (No Full Re-read)
-**Status:** 🔴 Not started
+### ✅ Fix R5 — Post-Edit Targeted Validation (No Full Re-read)
+**Status:** ✅ Done
 
 **What it does:**
 - After `edit_file` succeeds, it already returns the changed lines in its response
@@ -477,9 +474,8 @@ Each summary file includes a content hash header so staleness can be detected ch
 
 ---
 
-### Fix R6 — Cross-Provider Shared Index
-**Status:** 🔴 Not started  
-**Depends on:** Fix R1
+### ✅ Fix R6 — Cross-Provider Shared Index
+**Status:** ✅ Done
 
 **What it does:**
 - `.forst/` folder is provider-agnostic plain markdown — any provider (Claude, Gemini, GPT, Ollama) reads the same index
