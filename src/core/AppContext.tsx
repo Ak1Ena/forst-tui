@@ -20,6 +20,8 @@ export type Task = {
     id: string;
     description: string;
     status: TaskStatus;
+    parentTaskId?: string;
+    recursiveLimit?: number;
 };
 
 export type TokenUsage = {

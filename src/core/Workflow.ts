@@ -291,8 +291,13 @@ export const createAgentWorkflow = (
 
     if (syncCurrentTask && syncCurrentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
-        const taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n\n` +
-            (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
+        let taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n`;
+        
+        if (syncCurrentTask.recursiveLimit !== undefined) {
+            taskContext += `- **Recursive Limit**: ${syncCurrentTask.recursiveLimit}\n`;
+        }
+        
+        taskContext += `\n` + (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
             `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
 
         const firstMsg = activeMessages[0] as SystemMessage;
@@ -345,6 +350,15 @@ export const createAgentWorkflow = (
 
     const toolCalls: any[] = (lastMessage as any).tool_calls;
     const toolMap = new Map(tools.map((t: any) => [t.name, t]));
+    
+    // Inject the cache into config so tools (like read_files) can check for post-edit markers
+    const toolConfig = {
+        ...config,
+        configurable: {
+            ...config?.configurable,
+            toolResultCache
+        }
+    };
 
     // Dispatch all tool calls concurrently
     const results = await Promise.all(
@@ -369,12 +383,18 @@ export const createAgentWorkflow = (
                     result = toolResultCache.get(cacheKey)!;
                     isFromCache = true;
                 } else {
-                    result = await tool.invoke(tc.args, config);
+                    result = await tool.invoke(tc.args, toolConfig);
                     toolResultCache.set(cacheKey, result);
                 }
             } else {
                 // Non-cacheable: invoke directly
-                result = await tool.invoke(tc.args, config);
+                result = await tool.invoke(tc.args, toolConfig);
+
+                // Track recently edited files for Fix R5 (read_files intercept)
+                if (tc.name === 'edit_file' || tc.name === 'write_file') {
+                    const filePath = tc.args.filePath;
+                    if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
+                }
             }
 
             const duration = isFromCache ? 0 : (Date.now() - start);

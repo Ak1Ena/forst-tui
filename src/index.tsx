@@ -14,7 +14,8 @@ import {StatusHeader} from './components/StatusHeader.js';
 import { Sidebar } from './components/Sidebar.js';
 import { SettingsView } from './components/SettingsView.js';
 import { SessionListView } from './components/SessionListView.js';
-import { GeminiProvider } from './core/providers/GeminiProvider.js';
+import { TabBar } from './components/TabBar.js';
+import { Modal } from './components/Modal.js';
 import { saveMessage, getMessages, createSession, getLastSession, getSessionMessageCount, getSessions, updateSessionName, deleteSession } from './database/messages.js';
 import {vectorMemory} from './database/vectorStore.js';
 import {configManager} from './core/ConfigManager.js';
@@ -22,10 +23,9 @@ import {ProviderFactory} from './core/providers/ProviderFactory.js';
 import {getTools} from './tools/index.js';
 import {getSystemPrompt} from './core/Prompts.js';
 import {createAgentWorkflow} from './core/Workflow.js';
-import { HumanMessage, AIMessage, SystemMessage, ToolMessage, filterMessages, mergeMessageRuns, BaseMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage, ToolMessage, BaseMessage } from '@langchain/core/messages';
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { REMOVE_ALL_MESSAGES } from "@langchain/langgraph";
-import { Client } from "langsmith";
 import { Message } from './core/AppContext.js';
 import path from 'path';
 import { GLOBAL_DIR } from './core/ConfigManager.js';
@@ -78,6 +78,7 @@ const App = () => {
     const [tasks, setTasks] = useState<{name: string, enabled: boolean}[]>([]);
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
     const [view, setView] = useState<'chat' | 'settings' | 'sessions'>('chat');
+    const [showLogs, setShowLogs] = useState(false);
     const [sessionId, setSessionId] = useState<number>(0);
     const [sessionList, setSessionList] = useState<{id: number, name: string, created_at: string}[]>([]);
     const [scrollOffset, setScrollOffset] = useState(0);
@@ -138,76 +139,82 @@ const App = () => {
     }, [state.messages]);
 
     useInput((input, key) => {
-        if (key.escape && state.agentState !== 'idle') {
-            if (abortControllerRef.current) {
-                try {
-                    abortControllerRef.current.abort();
-                } catch (e) {
-                    // Ignore errors during abort
-                }
-
-                // If we aborted, any in-progress tasks should be marked as failed
-                const inProgressTask = state.taskQueue.find(t => t.status === 'in-progress');
-                if (inProgressTask) {
-                    dispatch({ type: 'UPDATE_TASK', payload: { id: inProgressTask.id, status: 'failed' } });
-                }
-
-                // If we aborted while tools were pending, we MUST add ToolMessages to history
-                // otherwise Anthropic will error on the next message in this session.
-                if (state.pendingToolCall && Array.isArray(state.pendingToolCall)) {
-                    const toolMessages: ToolMessage[] = [];
-                    for (const tc of state.pendingToolCall) {
-                        const toolMsg: Message = {
-                            role: 'tool',
-                            content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
-                            tool_call_id: tc.id,
-                            name: tc.name
-                        };
-                        dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
-                        saveMessage(sessionId, toolMsg);
-                        
-                        toolMessages.push(new ToolMessage({
-                            content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
-                            tool_call_id: tc.id,
-                            name: tc.name
-                        }));
+        if (key.escape) {
+            if (showLogs) {
+                setShowLogs(false);
+                return;
+            }
+            if (state.agentState !== 'idle') {
+                if (abortControllerRef.current) {
+                    try {
+                        abortControllerRef.current.abort();
+                    } catch (e) {
+                        // Ignore errors during abort
                     }
 
-                    // Sync the LangGraph checkpointer state as well
-                    // We also sync the taskQueue update
-                    const updatedQueue = state.taskQueue.map(t => 
-                        t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
-                    );
-                    syncGraphState(
-                        sessionId,
-                        activeProvider.instance,
-                        state.interactionMode,
-                        checkpointer,
-                        configManager.getSettings().shortTermMemoryLimit,
-                        { 
-                            messages: toolMessages,
-                            taskQueue: updatedQueue
+                    // If we aborted, any in-progress tasks should be marked as failed
+                    const inProgressTask = state.taskQueue.find(t => t.status === 'in-progress');
+                    if (inProgressTask) {
+                        dispatch({ type: 'UPDATE_TASK', payload: { id: inProgressTask.id, status: 'failed' } });
+                    }
+
+                    // If we aborted while tools were pending, we MUST add ToolMessages to history
+                    // otherwise Anthropic will error on the next message in this session.
+                    if (state.pendingToolCall && Array.isArray(state.pendingToolCall)) {
+                        const toolMessages: ToolMessage[] = [];
+                        for (const tc of state.pendingToolCall) {
+                            const toolMsg: Message = {
+                                role: 'tool',
+                                content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
+                                tool_call_id: tc.id,
+                                name: tc.name
+                            };
+                            dispatch({ type: 'ADD_MESSAGE', payload: toolMsg });
+                            saveMessage(sessionId, toolMsg);
+                            
+                            toolMessages.push(new ToolMessage({
+                                content: '🛑 Operation cancelled by user. Discard this intent and wait for next instructions.',
+                                tool_call_id: tc.id,
+                                name: tc.name
+                            }));
                         }
-                    );
 
-                    dispatch({ type: 'SET_PENDING_TOOL', payload: null });
-                } else if (inProgressTask) {
-                    // Even if no tool call was pending, sync the failed task state
-                    const updatedQueue = state.taskQueue.map(t => 
-                        t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
-                    );
-                    syncGraphState(
-                        sessionId,
-                        activeProvider.instance,
-                        state.interactionMode,
-                        checkpointer,
-                        configManager.getSettings().shortTermMemoryLimit,
-                        { taskQueue: updatedQueue }
-                    );
+                        // Sync the LangGraph checkpointer state as well
+                        // We also sync the taskQueue update
+                        const updatedQueue = state.taskQueue.map(t => 
+                            t.id === inProgressTask?.id ? { ...t, status: 'failed' as const } : t
+                        );
+                        syncGraphState(
+                            sessionId,
+                            activeProvider.instance,
+                            state.interactionMode,
+                            checkpointer,
+                            configManager.getSettings().shortTermMemoryLimit,
+                            { 
+                                messages: toolMessages,
+                                taskQueue: updatedQueue
+                            }
+                        );
+
+                        dispatch({ type: 'SET_PENDING_TOOL', payload: null });
+                    } else if (inProgressTask) {
+                        // Even if no tool call was pending, sync the failed task state
+                        const updatedQueue = state.taskQueue.map(t => 
+                            t.id === inProgressTask.id ? { ...t, status: 'failed' as const } : t
+                        );
+                        syncGraphState(
+                            sessionId,
+                            activeProvider.instance,
+                            state.interactionMode,
+                            checkpointer,
+                            configManager.getSettings().shortTermMemoryLimit,
+                            { taskQueue: updatedQueue }
+                        );
+                    }
+
+                    dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Operation cancelled by user.' } });
+                    dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
                 }
-
-                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: '🛑 Operation cancelled by user.' } });
-                dispatch({ type: 'SET_AGENT_STATE', payload: 'idle' });
             }
             return;
         }
@@ -219,28 +226,23 @@ const App = () => {
         }
 
         if (input === 's' && key.ctrl) {
-            setView(prev => {
-                const nextView = prev === 'chat' ? 'settings' : 'chat';
-                if (nextView === 'chat') {
-                    try {
-                        const config = configManager.getActiveProvider();
-                        if (config && (config.apiKey || config.type === 'ollama')) {
-                            setActiveProvider({
-                                instance: ProviderFactory.create(config),
-                                config,
-                                error: null
-                            });
-                            vm.init();
-                        }
-                    } catch (e: any) {
-                        const errorMsg = e?.error?.message || e?.message || String(e);
-                        setActiveProvider(prev => ({ ...prev, error: `Init Failed: ${errorMsg}` }));
-                    }
-                }
-                return nextView;
-            });
+            setView(prev => (prev === 'chat' ? 'settings' : 'chat'));
             return;
         }
+
+        if (input === 't' && key.ctrl) {
+            setShowLogs(prev => !prev);
+            return;
+        }
+
+        // Numeric Tab Switching
+        if (input === '1') { setView('chat'); return; }
+        if (input === '2') { 
+            setSessionList(getSessions());
+            setView('sessions'); 
+            return; 
+        }
+        if (input === '3') { setView('settings'); return; }
 
         if (key.tab && key.shift) {
             const modes: ('approval' | 'auto-accept' | 'yolo')[] = ['approval', 'auto-accept', 'yolo'];
@@ -342,7 +344,6 @@ const App = () => {
     const processStream = useCallback(async (stream: any, sessionId: number, userMessageText?: string) => {
         let accumulatedAssistantContent = "";
         try {
-            // ... (rest of logic before loop)
             if (configManager.getSettings().plannerMode && state.taskQueue.length > 0) {
                 const firstPending = state.taskQueue.find(t => t.status === 'pending');
                 if (firstPending && !state.taskQueue.some(t => t.status === 'in-progress')) {
@@ -361,11 +362,8 @@ const App = () => {
                 if (output && output.messages) {
                     const newMsgs = output.messages;
                     for (const msg of newMsgs) {
-                        // Extract token usage if available
                         const usage = (msg as any).usage_metadata || (msg as any).additional_kwargs?.usage || (msg as any).response_metadata?.usage;
                         if (usage) {
-                            // Anthropic: cache_read_input_tokens / cache_creation_input_tokens
-                            // OpenAI: usage.prompt_tokens_details.cached_tokens
                             const cachedTokens =
                                 usage.cache_read_input_tokens ||
                                 (usage.prompt_tokens_details?.cached_tokens) ||
@@ -409,10 +407,8 @@ const App = () => {
                         if (role === 'assistant' && formattedMsg.content) {
                             accumulatedAssistantContent += (accumulatedAssistantContent ? "\n" : "") + formattedMsg.content;
                             
-                            // Task Parsing logic
                             if (formattedMsg.content.includes('PLAN:')) {
                                 try {
-                                    // Robust parsing for JSON blocks
                                     const planPart = formattedMsg.content.split('PLAN:')[1];
                                     const jsonMatch = planPart.match(/```json\s*([\s\S]*?)```/) || planPart.match(/\[([\s\S]*?)\]/);
                                     
@@ -423,7 +419,9 @@ const App = () => {
                                             const formattedTasks = tasks.map((t: any) => ({
                                                 id: String(t.id || Math.random().toString(36).slice(2, 9)),
                                                 description: t.description || String(t),
-                                                status: 'pending' as const
+                                                status: 'pending' as const,
+                                                recursiveLimit: t.recursiveLimit,
+                                                parentTaskId: t.parentTaskId
                                             }));
                                             dispatch({ type: 'SET_QUEUE', payload: formattedTasks });
                                         }
@@ -442,10 +440,7 @@ const App = () => {
                 }
             }
 
-            // At the end of the stream, embed the exchange pair with context
             if (userMessageText && accumulatedAssistantContent) {
-                // Get immediate prior context for the overlap window (+1/-1 adjacent pairs)
-                // We take the last 2 messages before this exchange
                 const priorMsgs = state.messages.slice(-2);
                 const priorContext = priorMsgs.map(m => `${m.role.toUpperCase()}: ${ensureString(m.content)}`).join("\n");
                 
@@ -462,7 +457,6 @@ const App = () => {
             const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
             const config = { configurable: { thread_id: sessionId.toString() } };
             
-            // Sync current task queue into graph state before checking
             await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
             
             const graphState = await appWorkflow.getState(config);
@@ -622,7 +616,6 @@ const App = () => {
         saveMessage(sessionId, userMsg);
         await vm.addMessage(text, { role: 'user', timestamp: Date.now(), sessionId });
 
-        // Auto-rename session if it's the first message
         if (state.messages.length === 0) {
             (async () => {
                 try {
@@ -634,7 +627,7 @@ const App = () => {
                         setSessionList(getSessions());
                     }
                 } catch (e) {
-                    // Silently fail session renaming
+                    // Silently fail
                 }
             })();
         }
@@ -658,9 +651,6 @@ const App = () => {
             signal: abortControllerRef.current?.signal
         };
 
-        // Pre-stream sanitization: If the graph state ends in an orphaned tool_use, 
-        // we MUST resolve it before streaming, otherwise the graph will immediately
-        // execute that tool before seeing the new human message.
         try {
             const currentState = await appWorkflow.getState(config);
             const history = currentState.values.messages || [];
@@ -674,12 +664,10 @@ const App = () => {
                 }));
                 await appWorkflow.updateState(config, { messages: toolMessages });
             }
-        } catch (e) { /* ignore state check errors */ }
+        } catch (e) { /* ignore */ }
 
         await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
 
-        // We only pass the NEWEST message. 
-        // LangGraph's MemorySaver (checkpointer) will handle the history via thread_id.
         const inputMessages: any[] = [];
         if (state.messages.length === 0) {
             inputMessages.push(new SystemMessage(getSystemPrompt(configManager.getSettings().plannerMode)));
@@ -693,7 +681,7 @@ const App = () => {
             await processStream(stream, sessionId, text);
         } catch (error: any) {
             if (error?.name === 'AbortError') {
-                // Handled in useInput and processStream
+                // Handled
             } else {
                 throw error;
             }
@@ -728,7 +716,7 @@ const App = () => {
             await processStream(stream, sessionId, ensureString(lastUserMsg));
         } catch (error: any) {
             if (error?.name === 'AbortError') {
-                // Handled in useInput and processStream
+                // Handled
             } else {
                 throw error;
             }
@@ -775,7 +763,7 @@ const App = () => {
             await processStream(stream, sessionId, ensureString(lastUserMsg));
         } catch (error: any) {
             if (error?.name === 'AbortError') {
-                // Handled in useInput and processStream
+                // Handled
             } else {
                 throw error;
             }
@@ -784,6 +772,32 @@ const App = () => {
 
     return (
         <Box flexDirection="column" height="100%">
+            <TabBar 
+                tabs={[
+                    { id: 'chat', label: 'Chat', icon: '💬' },
+                    { id: 'sessions', label: 'History', icon: '📜' },
+                    { id: 'settings', label: 'Settings', icon: '⚙️' }
+                ]}
+                activeTab={view}
+                onTabChange={(id) => setView(id as any)}
+            />
+
+            {showLogs && (
+                <Modal title="Detailed Tool Statistics" onClose={() => setShowLogs(false)}>
+                    {Object.keys(state.toolStats).length === 0 ? (
+                        <Text italic color="gray">No tool calls yet.</Text>
+                    ) : (
+                        Object.entries(state.toolStats).map(([name, stats]) => (
+                            <Box key={name} flexDirection="row" justifyContent="space-between">
+                                <Text color="cyan">{name.padEnd(20)}</Text>
+                                <Text color="white">Calls: {stats.calls.toString().padEnd(5)}</Text>
+                                <Text color="gray">Total: {stats.totalMs}ms</Text>
+                            </Box>
+                        ))
+                    )}
+                </Modal>
+            )}
+
             {view === 'settings' ? (
                 <SettingsView onClose={() => setView('chat')} />
             ) : view === 'sessions' ? (
@@ -797,8 +811,6 @@ const App = () => {
                         const msgs = getMessages(id);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
-
-
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
                         setView('chat');
                     }}
@@ -807,7 +819,6 @@ const App = () => {
                         const updated = getSessions();
                         setSessionList(updated);
                         if (id === sessionId) {
-                            // If deleting active session, create a new one
                             const newSid = Number(createSession());
                             setSessionId(newSid);
                             dispatch({ type: 'RESET_USAGE' });
@@ -827,7 +838,7 @@ const App = () => {
                         toolStats={state.toolStats}
                     />
                     
-                    <Box flexGrow={1} flexDirection="row" marginTop={1}>
+                    <Box flexGrow={1} flexDirection="row" marginTop={0}>
                         <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="row">
                             <Box flexGrow={1} flexDirection="column">
                                 {activeProvider.error && (
@@ -839,10 +850,10 @@ const App = () => {
                                     messages={state.messages} 
                                     height={terminalSize.rows - 12} 
                                     scrollOffset={scrollOffset}
+                                    taskQueue={state.taskQueue}
                                 />
                             </Box>
                             
-                            {/* Scrollbar */}
                             <Box flexDirection="column" width={1} alignItems="center" paddingY={1}>
                                 <Text color="blue">▲</Text>
                                 <Box flexGrow={1} />
