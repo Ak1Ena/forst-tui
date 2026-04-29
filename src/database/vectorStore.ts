@@ -9,7 +9,7 @@ import { GLOBAL_DIR } from "../core/ConfigManager.js";
 process.env.OMP_NUM_THREADS = "1";
 
 // Using a model-specific path so we don't try to load incompatible indexes
-const VECTOR_STORE_PATH = path.join(GLOBAL_DIR, 'vector_store_bge');
+const VECTOR_STORE_PATH = path.join(GLOBAL_DIR, 'vector_store_minilm');
 
 export class VectorMemory {
     private vectorStore: FaissStore | null = null;
@@ -19,7 +19,7 @@ export class VectorMemory {
     constructor() {
         try {
             this.embeddings = new HuggingFaceTransformersEmbeddings({
-                model: "Xenova/bge-m3",
+                model: "Xenova/all-MiniLM-L6-v2",
             });
         } catch (e) {
             console.error('Failed to initialize local embeddings:', e);
