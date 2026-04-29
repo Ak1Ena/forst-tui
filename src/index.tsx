@@ -59,7 +59,9 @@ const ModelDownloadView = ({ onComplete }: { onComplete: () => void }) => {
             <Box flexDirection="column" padding={2} borderStyle="double" borderColor="red" width="100%" height="100%" alignItems="center" justifyContent="center">
                 <Text color="red" bold>❌ Error downloading model:</Text>
                 <Text>{error}</Text>
-                <Text marginTop={1}>Press any key to continue without local embeddings.</Text>
+                <Box marginTop={1}>
+                    <Text>Press any key to continue without local embeddings.</Text>
+                </Box>
             </Box>
         );
     }
@@ -76,9 +78,11 @@ const ModelDownloadView = ({ onComplete }: { onComplete: () => void }) => {
             <Box marginTop={1} borderStyle="single" paddingX={2}>
                 <Text color="yellow">[{bar}] {percent}%</Text>
             </Box>
-            <Text marginTop={1} color="gray">
-                {progress?.file ? `Downloading ${progress.file}...` : 'Initializing...'}
-            </Text>
+            <Box marginTop={1}>
+                <Text color="gray">
+                    {progress?.file ? `Downloading ${progress.file}...` : 'Initializing...'}
+                </Text>
+            </Box>
         </Box>
     );
 };
