@@ -47,11 +47,12 @@ function getFileHash(content: string): string {
 
 export const indexRepoTool = new DynamicStructuredTool({
     name: "index_repo",
-    description: "Indexes the repository by generating folder-level summaries. This saves tokens in future turns. Call this once at the start of a project or when structure changes significantly.",
+    description: "Indexes the repository by generating folder-level summaries. Use this to save high-level descriptions of folder purposes to save tokens in future turns. ALWAYS provide a 'summary' if you've just researched a new folder.",
     schema: z.object({
         folder: z.string().optional().describe("Specific folder to (re-)index. If omitted, indexes the entire project."),
+        summary: z.string().optional().describe("A natural language description of what this folder does and its key files. If provided, it will be saved into the folder's summary file.")
     }),
-    func: async ({ folder }) => {
+    func: async ({ folder, summary }) => {
         try {
             await ensureDirs();
             const root = process.cwd();
@@ -110,7 +111,20 @@ export const indexRepoTool = new DynamicStructuredTool({
                 
                 let summaryContent = `<!-- hash: ${hash} | updated: ${date} | files: ${files.map(f => f.name).join(',')} -->\n`;
                 summaryContent += `# ${relDir}/\n\n`;
-                summaryContent += `This folder contains ${files.length} files:\n`;
+
+                if (summary && foldersToProcess.length === 1) {
+                    // If we're indexing a specific folder with a provided summary
+                    summaryContent += `## 💡 Purpose\n${summary}\n\n`;
+                } else if (fsSync.existsSync(summaryFile)) {
+                    // Try to preserve existing custom summary if only metadata is being updated
+                    const existing = await fs.readFile(summaryFile, 'utf8');
+                    const purposeMatch = existing.match(/## 💡 Purpose\n([\s\S]*?)\n\n##/);
+                    if (purposeMatch) {
+                        summaryContent += `## 💡 Purpose\n${purposeMatch[1]}\n\n`;
+                    }
+                }
+
+                summaryContent += `## 🔑 Files\n`;
                 for (const file of files) {
                     summaryContent += `- ${file.name} (${(file.size / 1024).toFixed(1)} KB)\n`;
                 }
