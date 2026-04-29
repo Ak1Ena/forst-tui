@@ -10,6 +10,8 @@ import { searchToolsTool } from "./system/search_tools.js";
 import { searchTool } from "./web/search.js";
 import { discordSendMessageTool } from "./integrations/discord.js";
 
+import { indexRepoTool } from "./system/index_repo.js";
+
 export type ToolDefinition = any; // Loosen type for mixed tool sources
 
 export const registry: any[] = [
@@ -19,6 +21,7 @@ export const registry: any[] = [
     listDirectoryTool,
     editFileTool,
     writeFileTool,
+    indexRepoTool,
     memoryTool,
     skillsTool,
     searchToolsTool,

@@ -142,14 +142,14 @@ await workflow.updateState(config, { messages: REMOVE_ALL_MESSAGES });
 - [x] Add **Keyboard Shortcuts** (e.g., `Ctrl+L` to clear chat)
 - [x] Implement a **Command Palette** (accessible via `/`) for quick actions (change provider, clear chat, toggle heartbeat)
 - [ ] Create **Modal/Overlay** support for settings and detailed tool logs
-- [ ] Add **Sound/Notification support** (optional) for background task alerts
+- [X] Add **Sound/Notification support** (optional) for background task alerts
 
 ## Phase 14: Dynamic Configuration System
 - [x] Implement `ConfigManager` in `src/core/ConfigManager.ts` to manage `settings.config.json`
 - [x] Support dynamic addition of LLM providers (name, apiKey, baseUrl, model)
 - [x] Create a "Settings" view in the TUI to edit configuration in real-time
 - [x] Migrate provider initialization to use `ConfigManager` instead of `.env`
-- [ ] Implement secure storage/encryption for API keys (optional refinement)
+- [X] Implement secure storage/encryption for API keys (optional refinement)
 
 ## Phase 15: Agentic Workflow (LangGraph & LangSmith)
 - [x] Install `@langchain/langgraph` and `langsmith`
@@ -343,3 +343,150 @@ Call `invalidatePromptCache()` in `memoryTool` and `skillsTool` after write oper
 - [x] **Recent Messages Context**: `truncateHistory` is used to provide a lean "Recent Messages" block.
 - [x] **Context Ordering**: Strict sequence enforced: `Static (Cached) -> Relevant Memories (Top-K) -> Recent Messages -> Selected Tools (Top-K)`.
 - [x] **Pruning**: Top-K retrieval for both memories and conversation RAG keeps prompt size stable.
+
+---
+
+## Repo Index & Cross-Session Token Reduction
+
+### The Problem
+Every new session (or new provider) re-reads the entire repo from scratch to understand it.
+A single "review this repo" task burns ~70k tokens because the agent reads full file contents
+instead of summaries. After an `edit_file`, the agent re-reads the whole file to verify the change.
+This cost is paid **per session, per provider** — the same understanding is never reused.
+
+### Architecture: Folder-Level Summaries
+
+```
+.forst/
+  repo-index.md            ← top-level map: project purpose, folder list, entry points, key patterns
+  summaries/
+    src_core.md            ← what's in src/core/, key classes, how they connect
+    src_components.md      ← what's in src/components/, which component does what
+    src_tools.md           ← what's in src/tools/, each tool's purpose + input/output
+    src_database.md        ← schema overview, what each DB module does
+    tests.md               ← what's tested, test patterns used
+    scripts.md             ← build/utility scripts
+```
+
+Each summary file includes a content hash header so staleness can be detected cheaply:
+```md
+<!-- hash: a3f92b1c | updated: 2026-04-29 | files: Workflow.ts,Agent.ts,Prompts.ts -->
+# src/core/
+...
+```
+
+**Token cost comparison:**
+- Current: ~70k tokens per session (reads raw files)
+- After:   ~500 tokens per session (loads repo-index.md + relevant folder summary only)
+- Savings: pay 70k once ever, then reuse across all sessions and all providers
+
+---
+
+### Fix R1 — `index_repo` Tool (One-Time Repo Scanner)
+**Status:** 🔴 Not started
+
+**What it does:**
+- Walks the repo folder by folder
+- For each folder: reads all files, generates a summary into `.forst/summaries/<folder>.md`
+- Writes `.forst/repo-index.md` linking all summaries with a high-level project overview
+- Stores a content hash of each file inside the summary so staleness can be checked without re-reading
+
+**Trigger:** Agent calls `index_repo` once manually, or auto-triggered when `.forst/repo-index.md` is missing.
+
+**Files to create:**
+- `src/tools/system/index_repo.ts` — new tool
+- `src/tools/index.ts` — register it
+
+---
+
+### Fix R2 — Staleness Detection & Incremental Re-index
+**Status:** 🔴 Not started  
+**Depends on:** Fix R1
+
+**What it does:**
+- On session start, check each `.forst/summaries/*.md` hash against current file mtimes
+- If a folder's files changed since last summary → regenerate only that folder's summary
+- Untouched folders → load summary as-is, zero re-read cost
+
+**Implementation:**
+- `index_repo` tool accepts an optional `folder` arg to re-index a single folder
+- `edit_file.ts` — after a successful edit, mark the affected folder summary as stale
+  by appending `<!-- stale -->` to its header (or deleting the hash line)
+- On next session start, stale summaries are regenerated before the first agent turn
+
+**Files to modify:**
+- `src/tools/system/index_repo.ts` — add single-folder re-index mode
+- `src/tools/system/edit_file.ts` — add post-edit stale marker write
+
+---
+
+### Fix R3 — Auto-inject `repo-index.md` into Static System Prompt
+**Status:** 🔴 Not started  
+**Depends on:** Fix R1
+
+**What it does:**
+- On session start, if `.forst/repo-index.md` exists, load it and append to the static system prompt
+- Agent starts every session already knowing the project structure — no `list_files` / `read_files` needed to orient itself
+- Pairs with Anthropic `cache_control: ephemeral` (Fix 2) so the index is cached too
+
+**Files to modify:**
+- `src/core/Prompts.ts` — read `.forst/repo-index.md` in `getStaticPrompt()`, append if present
+
+---
+
+### Fix R4 — Smart `read_files` Guard (Suggest Summary First)
+**Status:** 🔴 Not started  
+**Depends on:** Fix R1
+
+**What it does:**
+- When agent calls `read_files` on a source file, check if a folder summary exists for its parent folder
+- If yes AND the summary is not stale → return the summary content instead, with a note:
+  `"[Folder summary available — returning .forst/summaries/src_core.md instead of full file.
+    Call read_files with force: true to read the raw file.]"`
+- Agent can override with `force: true` when it genuinely needs raw line content (e.g. before a targeted edit)
+
+**Files to modify:**
+- `src/tools/system/read_files.ts` — add summary-first intercept logic
+
+---
+
+### Fix R5 — Post-Edit Targeted Validation (No Full Re-read)
+**Status:** 🔴 Not started
+
+**What it does:**
+- After `edit_file` succeeds, it already returns the changed lines in its response
+- Agent should trust this confirmation and NOT call `read_files` on the same file again
+- If the agent does call `read_files` on a file that was just edited this turn → intercept and return
+  only the edited lines ±10 lines of context, not the full file
+
+**Implementation:**
+- `edit_file.ts` — enrich the return value to include a diff-style summary:
+  ```
+  ✅ Edit applied: src/core/Workflow.ts
+  Line 42: - const old = x;
+           + const old = y;
+  Context (lines 38–46): [snippet]
+  ```
+- `Workflow.ts` (`toolResultCache`) — after an `edit_file` call, store a `post-edit:<path>` marker
+- `read_files.ts` — if `post-edit:<path>` marker exists in cache, return only surrounding lines
+
+**Files to modify:**
+- `src/tools/system/edit_file.ts` — return rich diff confirmation
+- `src/tools/system/read_files.ts` — check post-edit cache marker, slice to context window
+- `src/core/Workflow.ts` — extend `toolResultCache` to track recently-edited files
+
+---
+
+### Fix R6 — Cross-Provider Shared Index
+**Status:** 🔴 Not started  
+**Depends on:** Fix R1
+
+**What it does:**
+- `.forst/` folder is provider-agnostic plain markdown — any provider (Claude, Gemini, GPT, Ollama) reads the same index
+- No re-indexing needed when switching providers mid-project
+- Commit `.forst/repo-index.md` and `.forst/summaries/` to git so the index travels with the repo
+  (add `.forst/summaries/*.md` to `.gitignore` optionally if summaries contain sensitive paths)
+
+**Files to modify:**
+- `.gitignore` — decide whether to track or ignore `.forst/summaries/`
+- `README.md` — document the `.forst/` convention

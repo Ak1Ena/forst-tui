@@ -345,6 +345,15 @@ export const createAgentWorkflow = (
 
     const toolCalls: any[] = (lastMessage as any).tool_calls;
     const toolMap = new Map(tools.map((t: any) => [t.name, t]));
+    
+    // Inject the cache into config so tools (like read_files) can check for post-edit markers
+    const toolConfig = {
+        ...config,
+        configurable: {
+            ...config?.configurable,
+            toolResultCache
+        }
+    };
 
     // Dispatch all tool calls concurrently
     const results = await Promise.all(
@@ -369,12 +378,18 @@ export const createAgentWorkflow = (
                     result = toolResultCache.get(cacheKey)!;
                     isFromCache = true;
                 } else {
-                    result = await tool.invoke(tc.args, config);
+                    result = await tool.invoke(tc.args, toolConfig);
                     toolResultCache.set(cacheKey, result);
                 }
             } else {
                 // Non-cacheable: invoke directly
-                result = await tool.invoke(tc.args, config);
+                result = await tool.invoke(tc.args, toolConfig);
+
+                // Track recently edited files for Fix R5 (read_files intercept)
+                if (tc.name === 'edit_file' || tc.name === 'write_file') {
+                    const filePath = tc.args.filePath;
+                    if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
+                }
             }
 
             const duration = isFromCache ? 0 : (Date.now() - start);

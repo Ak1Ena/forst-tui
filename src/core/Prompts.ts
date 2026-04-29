@@ -1,6 +1,8 @@
 import { getCoreMemories } from "../database/coreMemory.js";
 import { SkillManager } from "./SkillManager.js";
 import os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const BASE_PROMPT = `# FORST-TUI AI AGENT
 
@@ -36,6 +38,17 @@ export const getStaticPrompt = (plannerMode: boolean = false): string => {
     if (_staticCache.has(plannerMode)) return _staticCache.get(plannerMode)!;
 
     let prompt = BASE_PROMPT;
+
+    // Add Repo Index if available
+    const indexPath = path.join(process.cwd(), ".forst", "repo-index.md");
+    if (fs.existsSync(indexPath)) {
+        try {
+            const indexContent = fs.readFileSync(indexPath, 'utf8');
+            prompt += `\n## 📂 REPOSITORY INDEX\n${indexContent}\n`;
+        } catch (e) {
+            // Ignore if index file is unreadable
+        }
+    }
 
     // Add stable environment info (platform doesn't change per-turn)
     prompt += `\n## 👤 CONTEXT\n- **Env**: ${os.platform()} / Node.js TUI\n`;
