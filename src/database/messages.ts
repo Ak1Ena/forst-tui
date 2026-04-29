@@ -88,3 +88,24 @@ export const getMessages = (sessionId: number, limit: number = 100): Message[] =
         args: row.args ? JSON.parse(row.args) : undefined
     }));
 };
+
+export const searchMessages = (query: string, limit: number = 5): Message[] => {
+    if (!query) return [];
+    
+    // Simple keyword search across all messages
+    const stmt = db.prepare(`
+        SELECT role, content, tool_calls, tool_call_id, name, args FROM messages
+        WHERE content LIKE ?
+        ORDER BY id DESC LIMIT ?
+    `);
+    const rows = stmt.all(`%${query}%`, limit) as any[];
+
+    return rows.map(row => ({
+        role: row.role as 'user' | 'assistant' | 'system' | 'tool',
+        content: row.content,
+        tool_calls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+        tool_call_id: row.tool_call_id,
+        name: row.name,
+        args: row.args ? JSON.parse(row.args) : undefined
+    }));
+};

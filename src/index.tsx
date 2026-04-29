@@ -32,6 +32,56 @@ import { GLOBAL_DIR } from './core/ConfigManager.js';
 
 const checkpointer = SqliteSaver.fromConnString(path.join(GLOBAL_DIR, 'checkpoints.sqlite'));
 
+const ModelDownloadView = ({ onComplete }: { onComplete: () => void }) => {
+    const [progress, setProgress] = useState<any>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        vectorMemory.downloadLocalModel((p) => {
+            if (p.status === 'progress') {
+                setProgress(p);
+            } else if (p.status === 'done' && p.file?.endsWith('.onnx')) {
+                // transformers.js sends multiple 'done' events, usually the onnx one is the last big one
+            }
+        }).then(() => {
+            onComplete();
+        }).catch(err => {
+            setError(err.message || String(err));
+        });
+    }, []);
+
+    useInput(() => {
+        if (error) onComplete();
+    });
+
+    if (error) {
+        return (
+            <Box flexDirection="column" padding={2} borderStyle="double" borderColor="red" width="100%" height="100%" alignItems="center" justifyContent="center">
+                <Text color="red" bold>❌ Error downloading model:</Text>
+                <Text>{error}</Text>
+                <Text marginTop={1}>Press any key to continue without local embeddings.</Text>
+            </Box>
+        );
+    }
+
+    const percent = progress?.progress?.toFixed(1) || '0.0';
+    const barLength = 30;
+    const filledLength = Math.round(barLength * (progress?.progress || 0) / 100);
+    const bar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+
+    return (
+        <Box flexDirection="column" padding={2} borderStyle="double" borderColor="cyan" alignItems="center" justifyContent="center" width="100%" height="100%">
+            <Text bold color="cyan">🚀 Downloading Local Embedding Model</Text>
+            <Text dimColor>Xenova/all-MiniLM-L6-v2 (approx. 80MB)</Text>
+            <Box marginTop={1} borderStyle="single" paddingX={2}>
+                <Text color="yellow">[{bar}] {percent}%</Text>
+            </Box>
+            <Text marginTop={1} color="gray">
+                {progress?.file ? `Downloading ${progress.file}...` : 'Initializing...'}
+            </Text>
+        </Box>
+    );
+};
 
 const ensureString = (content: any): string => {
     if (typeof content === 'string') return content;
@@ -85,6 +135,7 @@ const App = () => {
     const [systemStats, setSystemStats] = useState({ cpu: '0.00', memory: '0.00' });
     const [view, setView] = useState<'chat' | 'settings' | 'sessions'>('chat');
     const [showLogs, setShowLogs] = useState(false);
+    const [needsModelDownload, setNeedsModelDownload] = useState(false);
     const [sessionId, setSessionId] = useState<number>(0);
     const [sessionList, setSessionList] = useState<{id: number, name: string, created_at: string}[]>([]);
     const [scrollOffset, setScrollOffset] = useState(0);
@@ -306,6 +357,17 @@ const App = () => {
     }, [state.messages.length]);
 
     useEffect(() => {
+        const checkModel = async () => {
+            const settings = configManager.getSettings();
+            if (settings.embeddingMode === 'local') {
+                const exists = await vectorMemory.checkLocalModelExists();
+                if (!exists) {
+                    setNeedsModelDownload(true);
+                }
+            }
+        };
+        checkModel();
+
         initSchema();
         
         let currentSid = getLastSession();
@@ -795,110 +857,116 @@ const App = () => {
 
     return (
         <Box flexDirection="column" height="100%">
-            <TabBar 
-                tabs={[
-                    { id: 'chat', label: 'Chat', icon: '💬' },
-                    { id: 'sessions', label: 'History', icon: '📜' },
-                    { id: 'settings', label: 'Settings', icon: '⚙️' }
-                ]}
-                activeTab={view}
-                onTabChange={(id) => setView(id as any)}
-            />
-
-            {showLogs && (
-                <Modal title="Detailed Tool Statistics" onClose={() => setShowLogs(false)}>
-                    {Object.keys(state.toolStats).length === 0 ? (
-                        <Text italic color="gray">No tool calls yet.</Text>
-                    ) : (
-                        Object.entries(state.toolStats).map(([name, stats]) => (
-                            <Box key={name} flexDirection="row" justifyContent="space-between">
-                                <Text color="cyan">{name.padEnd(20)}</Text>
-                                <Text color="white">Calls: {stats.calls.toString().padEnd(5)}</Text>
-                                <Text color="gray">Total: {stats.totalMs}ms</Text>
-                            </Box>
-                        ))
-                    )}
-                </Modal>
-            )}
-
-            {view === 'settings' ? (
-                <SettingsView onClose={() => setView('chat')} />
-            ) : view === 'sessions' ? (
-                <SessionListView 
-                    sessions={sessionList} 
-                    currentSessionId={sessionId}
-                    onClose={() => setView('chat')}
-                    onSelect={(id) => {
-                        setSessionId(id);
-                        dispatch({ type: 'RESET_USAGE' });
-                        const msgs = getMessages(id);
-                        dispatch({ type: 'SET_MESSAGES', payload: msgs });
-                        dispatch({ type: 'CLEAR_QUEUE' });
-                        dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
-                        setView('chat');
-                    }}
-                    onDelete={(id) => {
-                        deleteSession(id);
-                        const updated = getSessions();
-                        setSessionList(updated);
-                        if (id === sessionId) {
-                            const newSid = Number(createSession());
-                            setSessionId(newSid);
-                            dispatch({ type: 'RESET_USAGE' });
-                            dispatch({ type: 'SET_MESSAGES', payload: [] });
-                        }
-                    }}
-                />
+            {needsModelDownload ? (
+                <ModelDownloadView onComplete={() => setNeedsModelDownload(false)} />
             ) : (
                 <>
-                    <StatusHeader 
-                        provider={activeProvider.config?.name || 'None'} 
-                        model={activeProvider.config?.model || 'None'} 
-                        agentState={activeProvider.error ? 'error' : state.agentState} 
-                        interactionMode={state.interactionMode}
-                        plannerMode={configManager.getSettings().plannerMode}
-                        totalUsage={state.totalUsage}
-                        toolStats={state.toolStats}
+                    <TabBar 
+                        tabs={[
+                            { id: 'chat', label: 'Chat', icon: '💬' },
+                            { id: 'sessions', label: 'History', icon: '📜' },
+                            { id: 'settings', label: 'Settings', icon: '⚙️' }
+                        ]}
+                        activeTab={view}
+                        onTabChange={(id) => setView(id as any)}
                     />
-                    
-                    <Box flexGrow={1} flexDirection="row" marginTop={0}>
-                        <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="row">
-                            <Box flexGrow={1} flexDirection="column">
-                                {activeProvider.error && (
-                                    <Box padding={1} backgroundColor="red">
-                                        <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
+
+                    {showLogs && (
+                        <Modal title="Detailed Tool Statistics" onClose={() => setShowLogs(false)}>
+                            {Object.keys(state.toolStats).length === 0 ? (
+                                <Text italic color="gray">No tool calls yet.</Text>
+                            ) : (
+                                Object.entries(state.toolStats).map(([name, stats]) => (
+                                    <Box key={name} flexDirection="row" justifyContent="space-between">
+                                        <Text color="cyan">{name.padEnd(20)}</Text>
+                                        <Text color="white">Calls: {stats.calls.toString().padEnd(5)}</Text>
+                                        <Text color="gray">Total: {stats.totalMs}ms</Text>
                                     </Box>
-                                )}
-                                <ChatView 
-                                    messages={state.messages} 
-                                    height={terminalSize.rows - 12} 
-                                    scrollOffset={scrollOffset}
+                                ))
+                            )}
+                        </Modal>
+                    )}
+
+                    {view === 'settings' ? (
+                        <SettingsView onClose={() => setView('chat')} />
+                    ) : view === 'sessions' ? (
+                        <SessionListView 
+                            sessions={sessionList} 
+                            currentSessionId={sessionId}
+                            onClose={() => setView('chat')}
+                            onSelect={(id) => {
+                                setSessionId(id);
+                                dispatch({ type: 'RESET_USAGE' });
+                                const msgs = getMessages(id);
+                                dispatch({ type: 'SET_MESSAGES', payload: msgs });
+                                dispatch({ type: 'CLEAR_QUEUE' });
+                                dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
+                                setView('chat');
+                            }}
+                            onDelete={(id) => {
+                                deleteSession(id);
+                                const updated = getSessions();
+                                setSessionList(updated);
+                                if (id === sessionId) {
+                                    const newSid = Number(createSession());
+                                    setSessionId(newSid);
+                                    dispatch({ type: 'RESET_USAGE' });
+                                    dispatch({ type: 'SET_MESSAGES', payload: [] });
+                                }
+                            }}
+                        />
+                    ) : (
+                        <>
+                            <StatusHeader 
+                                provider={activeProvider.config?.name || 'None'} 
+                                model={activeProvider.config?.model || 'None'} 
+                                agentState={activeProvider.error ? 'error' : state.agentState} 
+                                interactionMode={state.interactionMode}
+                                plannerMode={configManager.getSettings().plannerMode}
+                                totalUsage={state.totalUsage}
+                                toolStats={state.toolStats}
+                            />
+                            
+                            <Box flexGrow={1} flexDirection="row" marginTop={0}>
+                                <Box flexGrow={1} borderStyle="single" borderColor={activeProvider.error ? 'red' : 'blue'} flexDirection="row">
+                                    <Box flexGrow={1} flexDirection="column">
+                                        {activeProvider.error && (
+                                            <Box padding={1} backgroundColor="red">
+                                                <Text color="white" bold>⚠️ {activeProvider.error}. Press Ctrl+S to configure.</Text>
+                                            </Box>
+                                        )}
+                                        <ChatView 
+                                            messages={state.messages} 
+                                            height={terminalSize.rows - 12} 
+                                            scrollOffset={scrollOffset}
+                                            taskQueue={state.taskQueue}
+                                        />
+                                    </Box>
+                                    
+                                    <Box flexDirection="column" width={1} alignItems="center" paddingY={1}>
+                                        <Text color="blue">▲</Text>
+                                        <Box flexGrow={1} />
+                                        <Text color={scrollOffset > 0 ? 'yellow' : 'blue'}>▼</Text>
+                                    </Box>
+                                </Box>
+                                
+                                <Sidebar 
+                                    systemStats={systemStats} 
+                                    tasks={tasks} 
+                                    sessions={sessionList} 
+                                    currentSessionId={sessionId} 
                                     taskQueue={state.taskQueue}
+                                    plannerMode={configManager.getSettings().plannerMode}
                                 />
                             </Box>
-                            
-                            <Box flexDirection="column" width={1} alignItems="center" paddingY={1}>
-                                <Text color="blue">▲</Text>
-                                <Box flexGrow={1} />
-                                <Text color={scrollOffset > 0 ? 'yellow' : 'blue'}>▼</Text>
-                            </Box>
-                        </Box>
-                        
-                        <Sidebar 
-                            systemStats={systemStats} 
-                            tasks={tasks} 
-                            sessions={sessionList} 
-                            currentSessionId={sessionId} 
-                            taskQueue={state.taskQueue}
-                            plannerMode={configManager.getSettings().plannerMode}
-                        />
-                    </Box>
 
-                    <ToolStatus activeTools={state.activeTools} agentState={state.agentState} pendingToolCall={state.pendingToolCall} />
-                    
-                    <Box marginTop={0}>
-                        <InputBar onSubmit={handleSendMessage} tools={getTools()} />
-                    </Box>
+                            <ToolStatus activeTools={state.activeTools} agentState={state.agentState} pendingToolCall={state.pendingToolCall} />
+                            
+                            <Box marginTop={0}>
+                                <InputBar onSubmit={handleSendMessage} tools={getTools()} />
+                            </Box>
+                        </>
+                    )}
                 </>
             )}
         </Box>

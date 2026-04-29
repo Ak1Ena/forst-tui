@@ -21,6 +21,7 @@ export interface AppSettings {
     plannerMode: boolean;
     memoryInjection: boolean;
     systemPromptInjection: boolean;
+    embeddingMode: 'local' | 'cloud' | 'none';
     providers: ProviderConfig[];
 }
 
@@ -44,6 +45,7 @@ const DEFAULT_CONFIG: AppSettings = {
     plannerMode: true,
     memoryInjection: true,
     systemPromptInjection: true,
+    embeddingMode: 'local',
     providers: [
         {
             id: 'gemini-default',
