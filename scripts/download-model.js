@@ -2,14 +2,14 @@ import { pipeline, env } from '@huggingface/transformers';
 
 async function download() {
     console.log('---------------------------------------------------------');
-    console.log('🚀 Pre-downloading embedding model: BAAI/bge-m3...');
-    console.log('ℹ️  This may take a minute (approx. 600MB)...');
+    console.log('🚀 Pre-downloading embedding model: Xenova/all-MiniLM-L6-v2...');
+    console.log('ℹ️  This may take a minute (approx. 80MB)...');
     console.log('---------------------------------------------------------');
 
     try {
         const statuses = {};
         // We use the 'feature-extraction' task which is what embeddings use
-        await pipeline('feature-extraction', 'Xenova/bge-m3', {
+        await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
             progress_callback: (progress) => {
                 if (progress.status === 'initiate') {
                     statuses[progress.file] = { loaded: 0, total: 0, percent: 0 };
