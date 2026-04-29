@@ -1,30 +1,26 @@
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { OllamaEmbeddings } from "@langchain/ollama";
+import { Embeddings } from "@langchain/core/embeddings";
 import { Document } from "@langchain/core/documents";
 import path from "path";
 import fs from "fs";
-import { GLOBAL_DIR } from "../core/ConfigManager.js";
+import { GLOBAL_DIR, configManager } from "../core/ConfigManager.js";
+import { env } from "@huggingface/transformers";
 
 // Prevent FAISS from crashing due to threading issues in some environments
 process.env.OMP_NUM_THREADS = "1";
 
-// Using a model-specific path so we don't try to load incompatible indexes
-const VECTOR_STORE_PATH = path.join(GLOBAL_DIR, 'vector_store_minilm');
+const LOCAL_MODEL_ID = "Xenova/all-MiniLM-L6-v2";
 
 export class VectorMemory {
     private vectorStore: FaissStore | null = null;
-    private embeddings: HuggingFaceTransformersEmbeddings | null = null;
+    private embeddings: Embeddings | null = null;
     private initPromise: Promise<void> | null = null;
 
-    constructor() {
-        try {
-            this.embeddings = new HuggingFaceTransformersEmbeddings({
-                model: "Xenova/all-MiniLM-L6-v2",
-            });
-        } catch (e) {
-            console.error('Failed to initialize local embeddings:', e);
-        }
-    }
+    constructor() {}
 
     async init() {
         if (this.initPromise) return this.initPromise;
@@ -33,58 +29,116 @@ export class VectorMemory {
     }
 
     private async _init() {
-        if (!this.embeddings) return;
-        
-        // Ensure the directory exists
-        if (!fs.existsSync(VECTOR_STORE_PATH)) {
-            fs.mkdirSync(VECTOR_STORE_PATH, { recursive: true });
+        const settings = configManager.getSettings();
+        const mode = settings.embeddingMode;
+
+        if (mode === 'none') {
+            this.embeddings = null;
+            this.vectorStore = null;
+            return;
         }
 
-        const indexPath = path.join(VECTOR_STORE_PATH, 'faiss.index');
+        if (mode === 'local') {
+            this.embeddings = new HuggingFaceTransformersEmbeddings({
+                model: LOCAL_MODEL_ID,
+            });
+        } else if (mode === 'cloud') {
+            const provider = configManager.getActiveProvider();
+            if (provider) {
+                if (provider.type === 'openai') {
+                    this.embeddings = new OpenAIEmbeddings({
+                        openAIApiKey: provider.apiKey,
+                        configuration: { baseURL: provider.baseUrl },
+                        modelName: "text-embedding-3-small"
+                    });
+                } else if (provider.type === 'gemini') {
+                    this.embeddings = new GoogleGenerativeAIEmbeddings({
+                        apiKey: provider.apiKey,
+                        modelName: "embedding-001"
+                    });
+                } else if (provider.type === 'ollama') {
+                    this.embeddings = new OllamaEmbeddings({
+                        baseUrl: provider.baseUrl || "http://localhost:11434",
+                        model: provider.model
+                    });
+                }
+            }
+        }
+
+        if (!this.embeddings) return;
+
+        // Using a mode-specific path so we don't try to load incompatible indexes
+        const storePath = path.join(GLOBAL_DIR, `vector_store_${mode}`);
+        
+        // Ensure the directory exists
+        if (!fs.existsSync(storePath)) {
+            fs.mkdirSync(storePath, { recursive: true });
+        }
+
+        const indexPath = path.join(storePath, 'faiss.index');
         if (fs.existsSync(indexPath)) {
             try {
-                this.vectorStore = await FaissStore.load(VECTOR_STORE_PATH, this.embeddings);
+                this.vectorStore = await FaissStore.load(storePath, this.embeddings);
             } catch (error) {
-                // If loading fails (e.g. corrupt or incompatible), we'll start fresh
                 this.vectorStore = null;
             }
         }
     }
 
+    async checkLocalModelExists(): Promise<boolean> {
+        // transformers.js uses a default cache directory. 
+        // We can check if the model folder exists there.
+        const cacheDir = env.cacheDir;
+        const modelPath = path.join(cacheDir, LOCAL_MODEL_ID.replace('/', '--'));
+        return fs.existsSync(modelPath);
+    }
+
+    async deleteLocalModel() {
+        const cacheDir = env.cacheDir;
+        const modelPath = path.join(cacheDir, LOCAL_MODEL_ID.replace('/', '--'));
+        if (fs.existsSync(modelPath)) {
+            fs.rmSync(modelPath, { recursive: true, force: true });
+        }
+    }
+
+    async downloadLocalModel(onProgress?: (progress: any) => void) {
+        const { pipeline } = await import('@huggingface/transformers');
+        await pipeline('feature-extraction', LOCAL_MODEL_ID, {
+            progress_callback: onProgress
+        });
+    }
+
     async addMessage(content: string, metadata: Record<string, any>) {
-        if (!this.embeddings || !content || content.trim().length === 0) return;
+        const settings = configManager.getSettings();
+        if (settings.embeddingMode === 'none') return;
+
         await this.init();
+        if (!this.embeddings || !content || content.trim().length === 0) return;
         
         const doc = new Document({ pageContent: content, metadata });
         
         try {
-            // Check if embeddings actually work before calling FAISS
-            const testEmbed = await this.embeddings.embedQuery("test");
-            if (!testEmbed || testEmbed.length === 0) {
-                return;
-            }
-
             if (!this.vectorStore) {
                 this.vectorStore = await FaissStore.fromDocuments([doc], this.embeddings);
             } else {
                 await this.vectorStore.addDocuments([doc]);
             }
             
-            await this.vectorStore.save(VECTOR_STORE_PATH);
+            const storePath = path.join(GLOBAL_DIR, `vector_store_${settings.embeddingMode}`);
+            await this.vectorStore.save(storePath);
         } catch (error) {
             console.error('VectorMemory addMessage error:', error);
         }
     }
 
     async search(query: string, k: number = 4, threshold: number = 0.5) {
+        const settings = configManager.getSettings();
+        if (settings.embeddingMode === 'none') return [];
+
         await this.init();
         if (!this.vectorStore || !query) return [];
         try {
-            // bge-m3 uses cosine similarity. faiss-node returns distance.
-            // We need to get results with scores.
             const resultsWithScores = await this.vectorStore.similaritySearchWithScore(query, k * 2);
-            
-            // Filter by threshold and deduplicate
             return resultsWithScores
                 .filter(([_, score]) => score >= threshold)
                 .map(([doc, _]) => doc)
@@ -108,11 +162,6 @@ export class VectorMemory {
             const role = doc.metadata.role ? doc.metadata.role.toUpperCase() : 'UNKNOWN';
             return `[${timestamp}] ${role}: ${doc.pageContent}`;
         }).join("\n---\n");
-    }
-
-    private async similaritySearch(query: string, k: number) {
-        if (!this.vectorStore) return [];
-        return await this.vectorStore.similaritySearch(query, k);
     }
 }
 

@@ -12,6 +12,7 @@ export const SettingsView = ({ onClose }: Props) => {
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [editField, setEditField] = useState<string | null>(null);
     const [tempValue, setTempValue] = useState('');
+    const [restartRequired, setRestartRequired] = useState(false);
 
     const activeProvider = settings.providers[0]; // For now, edit the first one
 
@@ -26,14 +27,18 @@ export const SettingsView = ({ onClose }: Props) => {
         'Short-term Memory': 'shortTermMemoryLimit',
         'Coworker Planner': 'plannerMode',
         'Memory (Related Context)': 'memoryInjection',
-        'System Prompt': 'systemPromptInjection'
+        'System Prompt': 'systemPromptInjection',
+        'Embedding Mode': 'embeddingMode',
+        'Delete Local Model': 'deleteModel'
     };
 
     const providerTypes = ['gemini', 'openai', 'anthropic', 'openrouter', 'ollama'];
     const interactionModes = ['approval', 'auto-accept', 'yolo'];
+    const embeddingModes = ['local', 'cloud', 'none'];
     const booleanOptions = ['enabled', 'disabled'];
     const [typeIndex, setTypeIndex] = useState(0);
     const [modeIndex, setModeIndex] = useState(0);
+    const [embIndex, setEmbIndex] = useState(0);
     const [boolIndex, setBoolIndex] = useState(0);
 
     useInput((input, key) => {
@@ -55,6 +60,13 @@ export const SettingsView = ({ onClose }: Props) => {
                     handleSaveEnum('interactionMode', interactionModes[modeIndex]);
                 }
             }
+            if (editField === 'embeddingMode') {
+                if (key.upArrow) setEmbIndex(prev => (prev - 1 + embeddingModes.length) % embeddingModes.length);
+                if (key.downArrow) setEmbIndex(prev => (prev + 1) % embeddingModes.length);
+                if (key.return) {
+                    handleSaveEnum('embeddingMode', embeddingModes[embIndex]);
+                }
+            }
             if (editField === 'plannerMode' || editField === 'memoryInjection' || editField === 'systemPromptInjection') {
                 if (key.upArrow || key.downArrow) setBoolIndex(prev => 1 - prev);
                 if (key.return) {
@@ -64,16 +76,26 @@ export const SettingsView = ({ onClose }: Props) => {
             return;
         }
 
-        const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode', 'memoryInjection', 'systemPromptInjection'];
+        const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode', 'memoryInjection', 'systemPromptInjection', 'embeddingMode', 'deleteModel'];
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
         if (key.downArrow) setSelectedIndex(Math.min(fields.length - 1, selectedIndex + 1));
         if (key.return) {
             const field = fields[selectedIndex];
+            if (field === 'deleteModel') {
+                import('../database/vectorStore.js').then(({ vectorMemory }) => {
+                    vectorMemory.deleteLocalModel().then(() => {
+                        // Success
+                    });
+                });
+                return;
+            }
             setEditField(field);
             if (field === 'type') {
                 setTypeIndex(providerTypes.indexOf(activeProvider.type || 'gemini'));
             } else if (field === 'interactionMode') {
                 setModeIndex(interactionModes.indexOf(settings.interactionMode || 'yolo'));
+            } else if (field === 'embeddingMode') {
+                setEmbIndex(embeddingModes.indexOf(settings.embeddingMode || 'local'));
             } else if (field === 'plannerMode' || field === 'memoryInjection' || field === 'systemPromptInjection') {
                 setBoolIndex(settings[field as keyof AppSettings] ? 0 : 1);
             } else if (field === 'recursionLimit') {
@@ -95,13 +117,18 @@ export const SettingsView = ({ onClose }: Props) => {
         } else {
             (newSettings as any)[field] = value;
         }
+
+        if (field === 'embeddingMode') {
+            setRestartRequired(true);
+        }
+
         setSettings(newSettings);
         configManager.save(newSettings);
         setEditField(null);
     };
 
     const handleSaveField = () => {
-        if (editField && editField !== 'type' && editField !== 'interactionMode' && editField !== 'plannerMode') {
+        if (editField && editField !== 'type' && editField !== 'interactionMode' && editField !== 'embeddingMode' && editField !== 'plannerMode') {
             if (editField === 'recursionLimit') {
                 const newSettings = { ...settings, recursionLimit: parseInt(tempValue) || 50 };
                 setSettings(newSettings);
@@ -153,6 +180,16 @@ export const SettingsView = ({ onClose }: Props) => {
                                 </Box>
                             ))}
                         </Box>
+                    ) : fieldKey === 'embeddingMode' ? (
+                        <Box flexDirection="row">
+                            {embeddingModes.map((m, i) => (
+                                <Box key={m} marginLeft={i === 0 ? 0 : 2}>
+                                    <Text color={embIndex === i ? 'yellow' : 'gray'} underline={embIndex === i}>
+                                        {m.toUpperCase()}
+                                    </Text>
+                                </Box>
+                            ))}
+                        </Box>
                     ) : (fieldKey === 'plannerMode' || fieldKey === 'memoryInjection' || fieldKey === 'systemPromptInjection') ? (
                         <Box flexDirection="row">
                             {booleanOptions.map((opt, i) => (
@@ -175,6 +212,8 @@ export const SettingsView = ({ onClose }: Props) => {
                         {label === 'API Key' && value ? '********' : 
                          label === 'Type' ? (value || 'gemini').toUpperCase() :
                          label === 'Interaction Mode' ? (value || 'yolo').toUpperCase() :
+                         label === 'Embedding Mode' ? (value || 'local').toUpperCase() :
+                         label === 'Delete Local Model' ? 'PRESS ENTER TO DELETE' :
                          (label === 'Coworker Planner' || label === 'Memory (Related Context)' || label === 'System Prompt') ? (value ? 'ENABLED' : 'DISABLED') :
                          value || '(empty)'}
                     </Text>
@@ -206,6 +245,14 @@ export const SettingsView = ({ onClose }: Props) => {
             {renderField('Coworker Planner', settings.plannerMode, 8)}
             {renderField('Memory (Related Context)', settings.memoryInjection, 9)}
             {renderField('System Prompt', settings.systemPromptInjection, 10)}
+            {renderField('Embedding Mode', settings.embeddingMode, 11)}
+            {renderField('Delete Local Model', '', 12)}
+
+            {restartRequired && (
+                <Box marginTop={1} paddingX={1} backgroundColor="yellow">
+                    <Text color="black" bold>⚠️ Restart required to apply Embedding Mode changes.</Text>
+                </Box>
+            )}
 
             <Box marginTop={2} flexDirection="column">
                 <Text dimColor>Use ↑/↓ to navigate, Enter to edit, Enter to save.</Text>

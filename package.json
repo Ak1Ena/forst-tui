@@ -19,7 +19,6 @@
   "scripts": {
     "dev": "node --import tsx src/index.tsx",
     "build": "tsc",
-    "postinstall": "node scripts/download-model.js",
     "prepack": "npm run build",
     "start": "node dist/index.js",
     "test": "vitest run",
