@@ -4,13 +4,41 @@ import fs from "fs/promises";
 import * as fsSync from 'fs';
 import path from "path";
 import crypto from "crypto";
+import { GLOBAL_DIR } from "../../core/ConfigManager.js";
 
-const FORST_DIR = ".forst";
-const SUMMARIES_DIR = path.join(FORST_DIR, "summaries");
+function getProjectSlug(): string {
+    const root = process.cwd();
+    // Create a unique slug based on the project path to avoid collisions
+    return crypto.createHash('sha1').update(root).digest('hex').substring(0, 10);
+}
+
+function getProjectName(): string {
+    return path.basename(process.cwd());
+}
+
+function getProjectPath(): string {
+    const projectName = getProjectName();
+    const projectSlug = getProjectSlug();
+    return path.join(GLOBAL_DIR, 'folder', `${projectName}_${projectSlug}`);
+}
+
+function getSummarizePath(): string {
+    return path.join(getProjectPath(), 'summerize');
+}
+
+function getRepoIndexPath(): string {
+    return path.join(getProjectPath(), 'repo_index.md');
+}
 
 async function ensureDirs() {
-    if (!fsSync.existsSync(FORST_DIR)) await fs.mkdir(FORST_DIR);
-    if (!fsSync.existsSync(SUMMARIES_DIR)) await fs.mkdir(SUMMARIES_DIR);
+    const paths = [
+        path.join(GLOBAL_DIR, 'folder'),
+        getProjectPath(),
+        getSummarizePath()
+    ];
+    for (const p of paths) {
+        if (!fsSync.existsSync(p)) await fs.mkdir(p, { recursive: true });
+    }
 }
 
 function getFileHash(content: string): string {
@@ -57,9 +85,11 @@ export const indexRepoTool = new DynamicStructuredTool({
             }
 
             const summaries = [];
+            const summarizeDir = getSummarizePath();
+
             for (const dir of foldersToProcess) {
                 const relDir = path.relative(root, dir) || ".";
-                const summaryFile = path.join(SUMMARIES_DIR, `${relDir.replace(/\//g, '_')}.md`);
+                const summaryFile = path.join(summarizeDir, `${relDir.replace(/\//g, '_')}.md`);
                 
                 const entries = await fs.readdir(dir, { withFileTypes: true });
                 const files = [];
@@ -85,26 +115,22 @@ export const indexRepoTool = new DynamicStructuredTool({
                     summaryContent += `- ${file.name} (${(file.size / 1024).toFixed(1)} KB)\n`;
                 }
                 
-                // Add a placeholder for actual summary if we had an LLM call here, 
-                // but for now we just list files and sizes as a "cheap" summary.
-                // A better version would use the agent to summarize each file.
-                
                 await fs.writeFile(summaryFile, summaryContent, 'utf8');
                 summaries.push(relDir);
             }
 
-            // Update repo-index.md
-            const indexFile = path.join(FORST_DIR, "repo-index.md");
-            let indexContent = `# Project Index\n\n`;
+            // Update repo_index.md
+            const indexFile = getRepoIndexPath();
+            let indexContent = `# Project Index: ${getProjectName()}\n\n`;
             indexContent += `Updated: ${new Date().toISOString()}\n\n`;
             indexContent += `## Folders\n`;
             for (const s of summaries.sort()) {
-                indexContent += `- [${s}/](summaries/${s.replace(/\//g, '_')}.md)\n`;
+                indexContent += `- [${s}/](summerize/${s.replace(/\//g, '_')}.md)\n`;
             }
 
             await fs.writeFile(indexFile, indexContent, 'utf8');
 
-            return `Successfully indexed ${summaries.length} folders. Index saved to .forst/repo-index.md`;
+            return `Successfully indexed ${summaries.length} folders. Index saved to ${indexFile}`;
         } catch (error: any) {
             return `Error indexing repo: ${error?.message || String(error)}`;
         }

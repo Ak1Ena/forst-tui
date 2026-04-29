@@ -3,8 +3,19 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import fs from "fs/promises";
 import * as fsSync from "fs";
 import path from "path";
+import crypto from "crypto";
+import { GLOBAL_DIR } from "../../core/ConfigManager.js";
 
-const SUMMARIES_DIR = path.join(".forst", "summaries");
+function getProjectSlug(): string {
+    const root = process.cwd();
+    return crypto.createHash('sha1').update(root).digest('hex').substring(0, 10);
+}
+
+function getSummarizePath(): string {
+    const projectName = path.basename(process.cwd());
+    const projectSlug = getProjectSlug();
+    return path.join(GLOBAL_DIR, 'folder', `${projectName}_${projectSlug}`, 'summerize');
+}
 
 /** Consistent formatting for line-numbered source code */
 function formatLines(lines: string[], startLine: number): string {
@@ -31,6 +42,7 @@ export const readFilesTool = new DynamicStructuredTool({
         const MAX_TOTAL_CHARS = 30000; // Total response limit
         let currentTotalChars = 0;
         const cache = config?.configurable?.toolResultCache;
+        const summarizeDir = getSummarizePath();
 
         for (const fileReq of files) {
             if (currentTotalChars >= MAX_TOTAL_CHARS) {
@@ -57,7 +69,7 @@ export const readFilesTool = new DynamicStructuredTool({
                 // Smart Guard: Suggest summary if available
                 if (!fileReq.force && !fileReq.startLine && !fileReq.endLine) {
                     const relDir = path.dirname(fileReq.filePath);
-                    const summaryFile = path.join(SUMMARIES_DIR, `${relDir.replace(/\//g, '_')}.md`);
+                    const summaryFile = path.join(summarizeDir, `${relDir.replace(/\//g, '_')}.md`);
                     if (fsSync.existsSync(summaryFile)) {
                         const summary = await fs.readFile(summaryFile, 'utf8');
                         results.push(`--- ${fileReq.filePath} (Suggested Summary) ---\n[FOLDER SUMMARY AVAILABLE] Returning ${relDir}/ summary instead of full file. Use force:true to read raw content.\n\n${summary}`);

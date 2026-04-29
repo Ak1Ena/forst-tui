@@ -3,11 +3,13 @@ import { SkillManager } from "./SkillManager.js";
 import os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import crypto from 'crypto';
+import { GLOBAL_DIR } from "./ConfigManager.js";
 
 const BASE_PROMPT = `# FORST-TUI AI AGENT
 
 ## ⚙️ PROTOCOL
-1. **Research**: Use the **REPOSITORY INDEX** and **.forst/ summaries** to understand project structure. DO NOT re-read raw files just for orientation; trust the index.
+1. **Research**: Use the **REPOSITORY INDEX** and **summerize** folder to understand project structure. DO NOT re-read raw files just for orientation; trust the index.
 2. **Plan**: For multi-step tasks, output \`PLAN:\` JSON block.
 3. **Surgical**: Use targeted line ranges for \`read_files\` and \`edit_file\` only when you need to see or change specific code.
 4. **Validate**: Verify changes with tests/builds.
@@ -20,37 +22,37 @@ const BASE_PROMPT = `# FORST-TUI AI AGENT
 `;
 
 // ─── In-memory cache for the static prompt ────────────────────────────────────
-// keyed by plannerMode (true/false) so we never serve the wrong variant.
 const _staticCache = new Map<boolean, string>();
 
-/** Invalidate the static prompt cache — call after writing/deleting memories or skills. */
 export const invalidatePromptCache = () => _staticCache.clear();
 
-/**
- * Returns the STATIC portion of the system prompt.
- * This part is stable within a session (doesn't change per-turn) and is safe
- * to cache client-side AND to send with Anthropic `cache_control: ephemeral`.
- *
- * Includes: base rules, planner instructions, skills.
- * Does NOT include: core memories (those go in getDynamicContext).
- */
+function getProjectSlug(): string {
+    const root = process.cwd();
+    return crypto.createHash('sha1').update(root).digest('hex').substring(0, 10);
+}
+
+function getRepoIndexPath(): string {
+    const projectName = path.basename(process.cwd());
+    const projectSlug = getProjectSlug();
+    return path.join(GLOBAL_DIR, 'folder', `${projectName}_${projectSlug}`, 'repo_index.md');
+}
+
 export const getStaticPrompt = (plannerMode: boolean = false): string => {
     if (_staticCache.has(plannerMode)) return _staticCache.get(plannerMode)!;
 
     let prompt = BASE_PROMPT;
 
     // Add Repo Index if available
-    const indexPath = path.join(process.cwd(), ".forst", "repo-index.md");
+    const indexPath = getRepoIndexPath();
     if (fs.existsSync(indexPath)) {
         try {
             const indexContent = fs.readFileSync(indexPath, 'utf8');
             prompt += `\n## 📂 REPOSITORY INDEX\n${indexContent}\n`;
         } catch (e) {
-            // Ignore if index file is unreadable
+            // Ignore
         }
     }
 
-    // Add stable environment info (platform doesn't change per-turn)
     prompt += `\n## 👤 CONTEXT\n- **Env**: ${os.platform()} / Node.js TUI\n`;
 
     if (plannerMode) {
@@ -74,7 +76,6 @@ PLAN:
 `;
     }
 
-    // Skills are stable between skill add/delete operations (cache invalidated on write)
     const skillsPrompt = SkillManager.getSkillsPrompt();
     if (skillsPrompt) {
         prompt += skillsPrompt;
@@ -84,33 +85,17 @@ PLAN:
     return prompt;
 };
 
-/**
- * Returns the DYNAMIC portion of the system prompt.
- * This part can change per-turn (memories updated, RAG context differs).
- * It should be injected as a separate, uncached block.
- *
- * Includes: core memories and conversation RAG.
- */
 export const getDynamicContext = (relevantMemories?: string, relevantConversation?: string): string => {
     let context = "";
-
     if (relevantMemories) {
         context += `\n\n--- RELEVANT CORE MEMORIES ---\n${relevantMemories}\n`;
     }
-
     if (relevantConversation) {
         context += `\n\n--- RELEVANT CONVERSATION CONTEXT ---\n${relevantConversation}\n[END CONTEXT]`;
     }
-
     return context;
 };
 
-/**
- * Returns the full combined system prompt (static + dynamic).
- * Used for compatibility with existing callers that expect a single string.
- * Prefer using getStaticPrompt() + getDynamicContext() separately in callModel
- * so the static part can be sent with Anthropic cache_control hints.
- */
 export const getSystemPrompt = (plannerMode: boolean = false): string => {
     try {
         return getStaticPrompt(plannerMode) + getDynamicContext();
