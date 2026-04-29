@@ -7,6 +7,7 @@ import { Embeddings } from "@langchain/core/embeddings";
 import { Document } from "@langchain/core/documents";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { GLOBAL_DIR, configManager } from "../core/ConfigManager.js";
 import { env } from "@huggingface/transformers";
 import { searchMessages } from "./messages.js";
@@ -89,13 +90,13 @@ export class VectorMemory {
     async checkLocalModelExists(): Promise<boolean> {
         // transformers.js uses a default cache directory. 
         // We can check if the model folder exists there.
-        const cacheDir = env.cacheDir;
+        const cacheDir = env.cacheDir || path.join(os.homedir(), '.cache', 'huggingface', 'hub');
         const modelPath = path.join(cacheDir, LOCAL_MODEL_ID.replace('/', '--'));
         return fs.existsSync(modelPath);
     }
 
     async deleteLocalModel() {
-        const cacheDir = env.cacheDir;
+        const cacheDir = env.cacheDir || path.join(os.homedir(), '.cache', 'huggingface', 'hub');
         const modelId = LOCAL_MODEL_ID;
         
         // Try both folder structures: "Xenova/model" and "Xenova--model"
