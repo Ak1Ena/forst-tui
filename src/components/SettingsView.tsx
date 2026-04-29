@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { configManager, ProviderConfig } from '../core/ConfigManager.js';
+import { configManager, ProviderConfig, AppSettings } from '../core/ConfigManager.js';
 
 interface Props {
     onClose: () => void;
@@ -24,7 +24,9 @@ export const SettingsView = ({ onClose }: Props) => {
         'Interaction Mode': 'interactionMode',
         'Recursion Limit': 'recursionLimit',
         'Short-term Memory': 'shortTermMemoryLimit',
-        'Coworker Planner': 'plannerMode'
+        'Coworker Planner': 'plannerMode',
+        'Memory (Related Context)': 'memoryInjection',
+        'System Prompt': 'systemPromptInjection'
     };
 
     const providerTypes = ['gemini', 'openai', 'anthropic', 'openrouter', 'ollama'];
@@ -53,16 +55,16 @@ export const SettingsView = ({ onClose }: Props) => {
                     handleSaveEnum('interactionMode', interactionModes[modeIndex]);
                 }
             }
-            if (editField === 'plannerMode') {
+            if (editField === 'plannerMode' || editField === 'memoryInjection' || editField === 'systemPromptInjection') {
                 if (key.upArrow || key.downArrow) setBoolIndex(prev => 1 - prev);
                 if (key.return) {
-                    handleSaveEnum('plannerMode', boolIndex === 0);
+                    handleSaveEnum(editField, boolIndex === 0);
                 }
             }
             return;
         }
 
-        const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode'];
+        const fields = ['name', 'type', 'model', 'apiKey', 'baseUrl', 'interactionMode', 'recursionLimit', 'shortTermMemoryLimit', 'plannerMode', 'memoryInjection', 'systemPromptInjection'];
         if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
         if (key.downArrow) setSelectedIndex(Math.min(fields.length - 1, selectedIndex + 1));
         if (key.return) {
@@ -72,8 +74,8 @@ export const SettingsView = ({ onClose }: Props) => {
                 setTypeIndex(providerTypes.indexOf(activeProvider.type || 'gemini'));
             } else if (field === 'interactionMode') {
                 setModeIndex(interactionModes.indexOf(settings.interactionMode || 'yolo'));
-            } else if (field === 'plannerMode') {
-                setBoolIndex(settings.plannerMode ? 0 : 1);
+            } else if (field === 'plannerMode' || field === 'memoryInjection' || field === 'systemPromptInjection') {
+                setBoolIndex(settings[field as keyof AppSettings] ? 0 : 1);
             } else if (field === 'recursionLimit') {
                 setTempValue(String(settings.recursionLimit || 50));
             } else if (field === 'shortTermMemoryLimit') {
@@ -151,7 +153,7 @@ export const SettingsView = ({ onClose }: Props) => {
                                 </Box>
                             ))}
                         </Box>
-                    ) : fieldKey === 'plannerMode' ? (
+                    ) : (fieldKey === 'plannerMode' || fieldKey === 'memoryInjection' || fieldKey === 'systemPromptInjection') ? (
                         <Box flexDirection="row">
                             {booleanOptions.map((opt, i) => (
                                 <Box key={opt} marginLeft={i === 0 ? 0 : 2}>
@@ -173,7 +175,7 @@ export const SettingsView = ({ onClose }: Props) => {
                         {label === 'API Key' && value ? '********' : 
                          label === 'Type' ? (value || 'gemini').toUpperCase() :
                          label === 'Interaction Mode' ? (value || 'yolo').toUpperCase() :
-                         label === 'Coworker Planner' ? (value ? 'ENABLED' : 'DISABLED') :
+                         (label === 'Coworker Planner' || label === 'Memory (Related Context)' || label === 'System Prompt') ? (value ? 'ENABLED' : 'DISABLED') :
                          value || '(empty)'}
                     </Text>
                 )}
@@ -202,6 +204,8 @@ export const SettingsView = ({ onClose }: Props) => {
             {renderField('Recursion Limit', String(settings.recursionLimit), 6)}
             {renderField('Short-term Memory', String(settings.shortTermMemoryLimit), 7)}
             {renderField('Coworker Planner', settings.plannerMode, 8)}
+            {renderField('Memory (Related Context)', settings.memoryInjection, 9)}
+            {renderField('System Prompt', settings.systemPromptInjection, 10)}
 
             <Box marginTop={2} flexDirection="column">
                 <Text dimColor>Use ↑/↓ to navigate, Enter to edit, Enter to save.</Text>

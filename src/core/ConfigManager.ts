@@ -19,6 +19,8 @@ export interface AppSettings {
     shortTermMemoryLimit: number;
     interactionMode: 'approval' | 'auto-accept' | 'yolo';
     plannerMode: boolean;
+    memoryInjection: boolean;
+    systemPromptInjection: boolean;
     providers: ProviderConfig[];
 }
 
@@ -40,6 +42,8 @@ const DEFAULT_CONFIG: AppSettings = {
     shortTermMemoryLimit: 12,
     interactionMode: 'yolo',
     plannerMode: true,
+    memoryInjection: true,
+    systemPromptInjection: true,
     providers: [
         {
             id: 'gemini-default',

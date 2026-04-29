@@ -63,8 +63,14 @@ const syncGraphState = async (
 ) => {
     if (!provider) return;
     try {
+        const settings = configManager.getSettings();
         const appWorkflow = createAgentWorkflow(provider, interactionMode, checkpointer, shortTermMemoryLimit);
-        const config = { configurable: { thread_id: sessionId.toString() } };
+        const config = { configurable: { 
+            thread_id: sessionId.toString(),
+            plannerMode: settings.plannerMode,
+            memoryInjection: settings.memoryInjection,
+            systemPromptInjection: settings.systemPromptInjection
+        } };
         await appWorkflow.updateState(config, payload);
     } catch (e) {
         // Silently fail background syncs
@@ -454,8 +460,14 @@ const App = () => {
                 });
             }
 
-            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
-            const config = { configurable: { thread_id: sessionId.toString() } };
+            const settings = configManager.getSettings();
+            const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, settings.shortTermMemoryLimit);
+            const config = { configurable: { 
+                thread_id: sessionId.toString(),
+                plannerMode: settings.plannerMode,
+                memoryInjection: settings.memoryInjection,
+                systemPromptInjection: settings.systemPromptInjection
+            } };
             
             await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
             
@@ -639,15 +651,18 @@ const App = () => {
             configManager.getSettings().shortTermMemoryLimit
         );
         
+        const settings = configManager.getSettings();
         const config = {
             configurable: { 
                 thread_id: sessionId.toString(), 
-                plannerMode: configManager.getSettings().plannerMode,
+                plannerMode: settings.plannerMode,
+                memoryInjection: settings.memoryInjection,
+                systemPromptInjection: settings.systemPromptInjection,
                 onToolCall: (name: string, ms: number) => {
                     dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
                 }
             },
-            recursionLimit: configManager.getSettings().recursionLimit || 15,
+            recursionLimit: settings.recursionLimit || 15,
             signal: abortControllerRef.current?.signal
         };
 
@@ -670,7 +685,9 @@ const App = () => {
 
         const inputMessages: any[] = [];
         if (state.messages.length === 0) {
-            inputMessages.push(new SystemMessage(getSystemPrompt(configManager.getSettings().plannerMode)));
+            if (settings.systemPromptInjection) {
+                inputMessages.push(new SystemMessage(getSystemPrompt(settings.plannerMode)));
+            }
         }
         inputMessages.push(new HumanMessage(text));
 
@@ -693,7 +710,8 @@ const App = () => {
         dispatch({ type: 'SET_AGENT_STATE', payload: 'acting' });
         dispatch({ type: 'SET_PENDING_TOOL', payload: null });
 
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
+        const settings = configManager.getSettings();
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, settings.shortTermMemoryLimit);
         
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -701,12 +719,14 @@ const App = () => {
         const config = {
             configurable: { 
                 thread_id: sessionId.toString(), 
-                plannerMode: configManager.getSettings().plannerMode,
+                plannerMode: settings.plannerMode,
+                memoryInjection: settings.memoryInjection,
+                systemPromptInjection: settings.systemPromptInjection,
                 onToolCall: (name: string, ms: number) => {
                     dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
                 }
             },
-            recursionLimit: configManager.getSettings().recursionLimit || 15,
+            recursionLimit: settings.recursionLimit || 15,
             signal: controller.signal
         };
 
@@ -728,7 +748,8 @@ const App = () => {
         
         dispatch({ type: 'SET_AGENT_STATE', payload: 'thinking' });
         
-        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, configManager.getSettings().shortTermMemoryLimit);
+        const settings = configManager.getSettings();
+        const appWorkflow = createAgentWorkflow(activeProvider.instance, state.interactionMode, checkpointer, settings.shortTermMemoryLimit);
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -736,12 +757,14 @@ const App = () => {
         const config = {
             configurable: { 
                 thread_id: sessionId.toString(), 
-                plannerMode: configManager.getSettings().plannerMode,
+                plannerMode: settings.plannerMode,
+                memoryInjection: settings.memoryInjection,
+                systemPromptInjection: settings.systemPromptInjection,
                 onToolCall: (name: string, ms: number) => {
                     dispatch({ type: 'UPDATE_TOOL_STATS', payload: { name, ms } });
                 }
             },
-            recursionLimit: configManager.getSettings().recursionLimit || 15,
+            recursionLimit: settings.recursionLimit || 15,
             signal: controller.signal
         };
 
