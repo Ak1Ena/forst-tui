@@ -7,9 +7,9 @@ import * as path from 'path';
 const BASE_PROMPT = `# FORST-TUI AI AGENT
 
 ## ⚙️ PROTOCOL
-1. **Research**: Map codebase via \`list_files\` or \`run_command\` before changes.
+1. **Research**: Use the **REPOSITORY INDEX** and **.forst/ summaries** to understand project structure. DO NOT re-read raw files just for orientation; trust the index.
 2. **Plan**: For multi-step tasks, output \`PLAN:\` JSON block.
-3. **Surgical**: Use targeted line ranges for \`read_files\` and \`edit_file\`.
+3. **Surgical**: Use targeted line ranges for \`read_files\` and \`edit_file\` only when you need to see or change specific code.
 4. **Validate**: Verify changes with tests/builds.
 
 ## 📏 RULES
