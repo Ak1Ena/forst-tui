@@ -419,7 +419,9 @@ const App = () => {
                                             const formattedTasks = tasks.map((t: any) => ({
                                                 id: String(t.id || Math.random().toString(36).slice(2, 9)),
                                                 description: t.description || String(t),
-                                                status: 'pending' as const
+                                                status: 'pending' as const,
+                                                recursiveLimit: t.recursiveLimit,
+                                                parentTaskId: t.parentTaskId
                                             }));
                                             dispatch({ type: 'SET_QUEUE', payload: formattedTasks });
                                         }

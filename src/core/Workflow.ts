@@ -291,8 +291,13 @@ export const createAgentWorkflow = (
 
     if (syncCurrentTask && syncCurrentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
-        const taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n\n` +
-            (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
+        let taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n`;
+        
+        if (syncCurrentTask.recursiveLimit !== undefined) {
+            taskContext += `- **Recursive Limit**: ${syncCurrentTask.recursiveLimit}\n`;
+        }
+        
+        taskContext += `\n` + (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
             `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
 
         const firstMsg = activeMessages[0] as SystemMessage;

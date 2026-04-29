@@ -51,10 +51,13 @@ export const Sidebar = ({ systemStats, tasks, sessions = [], currentSessionId, t
                             <Text color="gray" italic>No active tasks</Text>
                         ) : (
                             taskQueue.slice(0, 10).map((t, i) => (
-                                <Box key={t.id} flexDirection="row">
+                                <Box key={t.id} flexDirection="column">
                                     <Text color={t.status === 'completed' ? 'green' : t.status === 'in-progress' ? 'yellow' : 'gray'}>
                                         {getStatusIcon(t.status)} {t.description.slice(0, 22)}
                                     </Text>
+                                    {t.recursiveLimit !== undefined && (
+                                        <Text color="gray" italic dimColor>   ↳ Limit: {t.recursiveLimit}</Text>
+                                    )}
                                 </Box>
                             ))
                         )}
