@@ -172,10 +172,7 @@ function retrieveRelevantMemories(query: string): string {
 
     // Simple keyword matching/scoring for core memories
     const queryTerms = query.toLowerCase().split(/\W+/).filter(t => t.length > 2);
-    if (queryTerms.length === 0) {
-        // Fallback: if query is too short, return last 5 memories
-        return memories.slice(-5).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
-    }
+    if (queryTerms.length === 0) return "";
 
     const scored = memories.map(m => {
         const content = m.content.toLowerCase();
@@ -188,10 +185,7 @@ function retrieveRelevantMemories(query: string): string {
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 
-    if (scored.length === 0) {
-        // Fallback: return last 3 memories
-        return memories.slice(-3).map(m => `(${m.category.toUpperCase()}) ${m.content}`).join('\n');
-    }
+    if (scored.length === 0) return "";
 
     return scored.map(s => `(${s.memory.category.toUpperCase()}) ${s.memory.content}`).join('\n');
 }
@@ -251,6 +245,8 @@ export const createAgentWorkflow = (
   // plannerMode is passed via config.configurable or falls back to false
   const callModel = async (state: typeof AgentState.State, config?: any) => {
     const plannerMode: boolean = config?.configurable?.plannerMode ?? false;
+    const memoryInjection: boolean = config?.configurable?.memoryInjection ?? true;
+    const systemPromptInjection: boolean = config?.configurable?.systemPromptInjection ?? true;
     const { messages, taskQueue } = state;
 
     // --- 0. Dedup Cache Management ---
@@ -261,26 +257,34 @@ export const createAgentWorkflow = (
     const currentTask = taskQueue.find(t => t.status === 'in-progress');
     const query = getRetrievalQuery(messages, currentTask);
     
-    const relevantMemories = retrieveRelevantMemories(query);
-    const relevantConversation = await retrieveRelevantContext(messages, taskQueue);
+    const relevantMemories = memoryInjection ? retrieveRelevantMemories(query) : "";
+    const relevantConversation = memoryInjection ? await retrieveRelevantContext(messages, taskQueue) : "";
 
     // --- 2. Build Context Blocks (Ordered: Static -> Dynamic) ---
-    const systemBlocks: any[] = [
-        { 
+    const systemBlocks: any[] = [];
+    
+    if (systemPromptInjection) {
+        systemBlocks.push({ 
             type: "text", 
             text: getStaticPrompt(plannerMode), 
             cache_control: { type: "ephemeral" } // Anthropic stable prefix caching
-        },
-    ];
+        });
+    }
 
     const dynamicContext = getDynamicContext(relevantMemories, relevantConversation);
-    if (dynamicContext) {
+    if (dynamicContext && memoryInjection) {
         systemBlocks.push({ type: "text", text: dynamicContext });
     }
 
     // --- 3. History Truncation (Recent Messages) ---
     const recentMessages = truncateHistory(messages, shortTermMemoryLimit);
-    let activeMessages: BaseMessage[] = [new SystemMessage({ content: systemBlocks }), ...recentMessages];
+    let activeMessages: BaseMessage[] = [];
+    
+    if (systemBlocks.length > 0) {
+        activeMessages = [new SystemMessage({ content: systemBlocks }), ...recentMessages];
+    } else {
+        activeMessages = [...recentMessages];
+    }
 
     // --- 4. Sanitization (Anthropic Compliance) ---
     activeMessages = sanitizeForAnthropic(activeMessages);
