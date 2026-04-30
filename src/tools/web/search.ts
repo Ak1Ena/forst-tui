@@ -20,9 +20,15 @@ class DuckDuckGoSearch extends Tool {
 
         for (let i = 0; i < maxRetries; i++) {
             try {
+                // More conservative delay: 
+                // Attempt 1: 0ms (first try)
+                // Attempt 2: ~4-6s
+                // Attempt 3: ~10-14s
+                // Attempt 4: ~28-32s
                 if (i > 0) {
-                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    const delay = Math.pow(3, i) * 2000 + Math.random() * 2000;
                     await new Promise(resolve => setTimeout(resolve, delay));
+                    console.warn(`DuckDuckGo retry ${i}/${maxRetries} after ${Math.round(delay/1000)}s sleep...`);
                 }
 
                 const { results } = await search(input, {

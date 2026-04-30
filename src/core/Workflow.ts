@@ -414,9 +414,10 @@ export const createAgentWorkflow = (
                     const start = Date.now();
                     
                     if (attempt > 0) {
-                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+                        // More conservative workflow retry delay
+                        const delay = Math.pow(3, attempt) * 2000 + Math.random() * 1000;
                         await new Promise(resolve => setTimeout(resolve, delay));
-                        console.warn(`Retrying tool "${tc.name}" (attempt ${attempt}/${maxRetries})...`);
+                        console.warn(`Retrying tool "${tc.name}" (attempt ${attempt}/${maxRetries}) after ${Math.round(delay/1000)}s sleep...`);
                     }
 
                     // Dedup cache — only for safe read-only tools
