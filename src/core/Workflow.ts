@@ -21,6 +21,10 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => [],
   }),
+  toolSummaries: Annotation<Record<string, string>>({
+    reducer: (x, y) => ({ ...x, ...y }),
+    default: () => ({}),
+  }),
 });
 
 // Build the TF-IDF tool index lazily.
@@ -247,11 +251,15 @@ export const createAgentWorkflow = (
     const plannerMode: boolean = config?.configurable?.plannerMode ?? false;
     const memoryInjection: boolean = config?.configurable?.memoryInjection ?? true;
     const systemPromptInjection: boolean = config?.configurable?.systemPromptInjection ?? true;
-    const { messages, taskQueue } = state;
+    const { messages, taskQueue, toolSummaries } = state;
 
     // --- 0. Dedup Cache Management ---
     const lastHumanIdx = [...messages].reverse().findIndex(m => m._getType() === 'human');
-    if (lastHumanIdx === 0) toolResultCache.clear();
+    let currentToolSummaries = { ...toolSummaries };
+    if (lastHumanIdx === 0) {
+        toolResultCache.clear();
+        currentToolSummaries = {}; // Clear summaries on new user message
+    }
 
     // --- 1. Retrieval (Core Memories + Conversation RAG) ---
     const currentTask = taskQueue.find(t => t.status === 'in-progress');
@@ -299,6 +307,15 @@ export const createAgentWorkflow = (
         
         if (syncCurrentTask.recursiveLimit !== undefined) {
             taskContext += `- **Recursive Limit**: ${syncCurrentTask.recursiveLimit}\n`;
+        }
+
+        // Inject tool summaries for the current task if they exist
+        const taskSummaries = Object.entries(currentToolSummaries)
+            .map(([name, summary]) => `- **${name}**: ${summary}`)
+            .join('\n');
+        
+        if (taskSummaries) {
+            taskContext += `\n--- PREVIOUS STEP SUMMARIES ---\n${taskSummaries}\n`;
         }
         
         taskContext += `\n` + (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
@@ -373,6 +390,8 @@ export const createAgentWorkflow = (
         }
     };
 
+    const newSummaries: Record<string, string> = {};
+
     // Dispatch all tool calls concurrently
     const results = await Promise.all(
         toolCalls.map(async (tc: any) => {
@@ -385,47 +404,117 @@ export const createAgentWorkflow = (
                 });
             }
 
-            const start = Date.now();
             let result: any;
             let isFromCache = false;
+            let lastError: any;
+            const maxRetries = 2; // Retry up to 2 times (total 3 attempts)
 
-            // Dedup cache — only for safe read-only tools
-            if (CACHEABLE_TOOLS.has(tc.name)) {
-                const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
-                if (toolResultCache.has(cacheKey)) {
-                    result = toolResultCache.get(cacheKey)!;
-                    isFromCache = true;
-                } else {
-                    result = await tool.invoke(tc.args, toolConfig);
-                    toolResultCache.set(cacheKey, result);
-                }
-            } else {
-                // Non-cacheable: invoke directly
-                result = await tool.invoke(tc.args, toolConfig);
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const start = Date.now();
+                    
+                    if (attempt > 0) {
+                        // More conservative workflow retry delay
+                        const delay = Math.pow(3, attempt) * 2000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        console.warn(`Retrying tool "${tc.name}" (attempt ${attempt}/${maxRetries}) after ${Math.round(delay/1000)}s sleep...`);
+                    }
 
-                // Track recently edited files for Fix R5 (read_files intercept)
-                if (tc.name === 'edit_file' || tc.name === 'write_file') {
-                    const filePath = tc.args.filePath;
-                    if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
+                    // Dedup cache — only for safe read-only tools
+                    if (CACHEABLE_TOOLS.has(tc.name)) {
+                        const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
+                        if (toolResultCache.has(cacheKey)) {
+                            result = toolResultCache.get(cacheKey)!;
+                            isFromCache = true;
+                        } else {
+                            result = await tool.invoke(tc.args, toolConfig);
+                            toolResultCache.set(cacheKey, result);
+                        }
+                    } else {
+                        // Non-cacheable: invoke directly
+                        result = await tool.invoke(tc.args, toolConfig);
+
+                        // Track recently edited files for Fix R5 (read_files intercept)
+                        if (tc.name === 'edit_file' || tc.name === 'write_file') {
+                            const filePath = tc.args.filePath;
+                            if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
+                        }
+                    }
+
+                    const duration = isFromCache ? 0 : (Date.now() - start);
+                    if (config?.configurable?.onToolCall) {
+                        try {
+                            config.configurable.onToolCall(tc.name, duration);
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    // If we reached here, the tool call was successful
+                    break; 
+
+                } catch (error: any) {
+                    lastError = error;
+                    
+                    // If it's the last attempt, we'll let it fall through to the error handler
+                    if (attempt === maxRetries) {
+                        result = `Error executing tool "${tc.name}": ${error.message || error}`;
+                        break;
+                    }
+
+                    // Optimization: check if error is likely transient
+                    const errMsg = error?.message?.toLowerCase() || "";
+                    const isTransient = errMsg.includes("timeout") || 
+                                       errMsg.includes("rate limit") || 
+                                       errMsg.includes("too many requests") || 
+                                       errMsg.includes("429") ||
+                                       errMsg.includes("500") ||
+                                       errMsg.includes("503") ||
+                                       errMsg.includes("anomaly") ||
+                                       errMsg.includes("econnreset") ||
+                                       errMsg.includes("etimedout");
+
+                    if (!isTransient && tc.name !== 'duckduckgo-search') {
+                        // If it's a hard error (like "File not found"), don't bother retrying
+                        // unless it's DDG which we always want to try hard on
+                        result = `Error executing tool "${tc.name}": ${error.message || error}`;
+                        break;
+                    }
                 }
             }
 
-            const duration = isFromCache ? 0 : (Date.now() - start);
-            if (config?.configurable?.onToolCall) {
+            const resultContent = typeof result === 'string' ? result : JSON.stringify(result);
+
+            // --- Summarization Logic ---
+            // We summarize non-cacheable tools or large outputs to provide context for the next step.
+            if (!isFromCache && tc.name !== 'search_tools' && tc.name !== 'memory') {
                 try {
-                    config.configurable.onToolCall(tc.name, duration);
-                } catch (e) { /* ignore */ }
+                    const summaryPrompt = `Summarize the result of the tool "${tc.name}" in one short sentence. Focus on what was achieved or the key finding.
+Tool Arguments: ${JSON.stringify(tc.args)}
+Tool Output: ${resultContent.substring(0, 1000)}${resultContent.length > 1000 ? '...' : ''}
+
+Summary:`;
+                    const summaryResponse = await model.invoke([new HumanMessage(summaryPrompt)]);
+                    const summaryText = typeof summaryResponse.content === 'string' 
+                        ? summaryResponse.content.trim() 
+                        : JSON.stringify(summaryResponse.content).trim();
+                    
+                    newSummaries[`${tc.name}_${tc.id?.substring(0, 4) || 'call'}`] = summaryText;
+                } catch (e) {
+                    console.warn(`Failed to generate summary for ${tc.name}:`, e);
+                }
             }
 
             return new ToolMessage({
-                content: typeof result === 'string' ? result : JSON.stringify(result),
+                content: resultContent,
                 tool_call_id: tc.id || 'unknown',
                 name: tc.name,
             });
         })
     );
 
-    return { messages: results };
+    return { 
+        messages: results,
+        toolSummaries: newSummaries
+    };
   };
 
   // Define a new graph
