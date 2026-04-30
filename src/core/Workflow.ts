@@ -404,36 +404,80 @@ export const createAgentWorkflow = (
                 });
             }
 
-            const start = Date.now();
             let result: any;
             let isFromCache = false;
+            let lastError: any;
+            const maxRetries = 2; // Retry up to 2 times (total 3 attempts)
 
-            // Dedup cache — only for safe read-only tools
-            if (CACHEABLE_TOOLS.has(tc.name)) {
-                const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
-                if (toolResultCache.has(cacheKey)) {
-                    result = toolResultCache.get(cacheKey)!;
-                    isFromCache = true;
-                } else {
-                    result = await tool.invoke(tc.args, toolConfig);
-                    toolResultCache.set(cacheKey, result);
-                }
-            } else {
-                // Non-cacheable: invoke directly
-                result = await tool.invoke(tc.args, toolConfig);
-
-                // Track recently edited files for Fix R5 (read_files intercept)
-                if (tc.name === 'edit_file' || tc.name === 'write_file') {
-                    const filePath = tc.args.filePath;
-                    if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
-                }
-            }
-
-            const duration = isFromCache ? 0 : (Date.now() - start);
-            if (config?.configurable?.onToolCall) {
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
                 try {
-                    config.configurable.onToolCall(tc.name, duration);
-                } catch (e) { /* ignore */ }
+                    const start = Date.now();
+                    
+                    if (attempt > 0) {
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        console.warn(`Retrying tool "${tc.name}" (attempt ${attempt}/${maxRetries})...`);
+                    }
+
+                    // Dedup cache — only for safe read-only tools
+                    if (CACHEABLE_TOOLS.has(tc.name)) {
+                        const cacheKey = `${tc.name}::${JSON.stringify(tc.args)}`;
+                        if (toolResultCache.has(cacheKey)) {
+                            result = toolResultCache.get(cacheKey)!;
+                            isFromCache = true;
+                        } else {
+                            result = await tool.invoke(tc.args, toolConfig);
+                            toolResultCache.set(cacheKey, result);
+                        }
+                    } else {
+                        // Non-cacheable: invoke directly
+                        result = await tool.invoke(tc.args, toolConfig);
+
+                        // Track recently edited files for Fix R5 (read_files intercept)
+                        if (tc.name === 'edit_file' || tc.name === 'write_file') {
+                            const filePath = tc.args.filePath;
+                            if (filePath) toolResultCache.set(`post-edit:${filePath}`, result);
+                        }
+                    }
+
+                    const duration = isFromCache ? 0 : (Date.now() - start);
+                    if (config?.configurable?.onToolCall) {
+                        try {
+                            config.configurable.onToolCall(tc.name, duration);
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    // If we reached here, the tool call was successful
+                    break; 
+
+                } catch (error: any) {
+                    lastError = error;
+                    
+                    // If it's the last attempt, we'll let it fall through to the error handler
+                    if (attempt === maxRetries) {
+                        result = `Error executing tool "${tc.name}": ${error.message || error}`;
+                        break;
+                    }
+
+                    // Optimization: check if error is likely transient
+                    const errMsg = error?.message?.toLowerCase() || "";
+                    const isTransient = errMsg.includes("timeout") || 
+                                       errMsg.includes("rate limit") || 
+                                       errMsg.includes("too many requests") || 
+                                       errMsg.includes("429") ||
+                                       errMsg.includes("500") ||
+                                       errMsg.includes("503") ||
+                                       errMsg.includes("anomaly") ||
+                                       errMsg.includes("econnreset") ||
+                                       errMsg.includes("etimedout");
+
+                    if (!isTransient && tc.name !== 'duckduckgo-search') {
+                        // If it's a hard error (like "File not found"), don't bother retrying
+                        // unless it's DDG which we always want to try hard on
+                        result = `Error executing tool "${tc.name}": ${error.message || error}`;
+                        break;
+                    }
+                }
             }
 
             const resultContent = typeof result === 'string' ? result : JSON.stringify(result);
