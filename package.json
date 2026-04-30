@@ -58,7 +58,6 @@
     "@langchain/ollama": "^1.2.6",
     "@langchain/openai": "^1.4.4",
     "better-sqlite3": "^12.9.0",
-    "duck-duck-scrape": "^2.2.7",
     "faiss-node": "^0.5.1",
     "ink": "^7.0.1",
     "ink-text-input": "^6.0.0",
