@@ -1,66 +1,73 @@
 import { Tool } from "@langchain/core/tools";
-import { search, SafeSearchType } from "duck-duck-scrape";
 
 /**
- * Custom DuckDuckGo search tool with retry logic.
+ * A stable tool using the official DuckDuckGo Instant Answer API.
+ * Specifically designed for fast fact-lookup, summaries, and official links.
  */
-class DuckDuckGoSearch extends Tool {
-    name = "duckduckgo-search";
-    description = "A search engine. Useful for when you need to answer questions about current events. Input should be a search query.";
-    maxResults = 5;
-
-    constructor(params?: { maxResults?: number }) {
-        super();
-        this.maxResults = params?.maxResults ?? this.maxResults;
-    }
+class FactLookupTool extends Tool {
+    name = "fact-lookup";
+    description = "A fact-finding tool. Use this to get concise summaries, definitions, and official links for well-known topics, entities, people, or products. It provides verified facts rather than general web search results.";
 
     async _call(input: string) {
-        let lastError: any;
-        const maxRetries = 3;
-
-        for (let i = 0; i < maxRetries; i++) {
-            try {
-                // More conservative delay: 
-                // Attempt 1: 0ms (first try)
-                // Attempt 2: ~4-6s
-                // Attempt 3: ~10-14s
-                // Attempt 4: ~28-32s
-                if (i > 0) {
-                    const delay = Math.pow(3, i) * 2000 + Math.random() * 2000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    console.warn(`DuckDuckGo retry ${i}/${maxRetries} after ${Math.round(delay/1000)}s sleep...`);
+        try {
+            const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(input)}&format=json&no_html=1`;
+            
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
                 }
+            });
 
-                const { results } = await search(input, {
-                    safeSearch: SafeSearchType.OFF,
-                });
-
-                if (!results || results.length === 0) {
-                    return "No results found.";
-                }
-
-                return JSON.stringify(
-                    results
-                        .map((result) => ({
-                            title: result.title,
-                            link: result.url,
-                            snippet: result.description,
-                        }))
-                        .slice(0, this.maxResults)
-                );
-            } catch (error: any) {
-                lastError = error;
-                const errorMessage = error?.message?.toLowerCase() || "";
-                if (errorMessage.includes("anomaly") || errorMessage.includes("too many requests") || errorMessage.includes("429")) {
-                    console.warn(`DuckDuckGo search rate limited (attempt ${i + 1}/${maxRetries}). Retrying...`);
-                    continue;
-                }
-                throw error;
+            if (!response.ok) {
+                return `Error: DuckDuckGo API returned status ${response.status}`;
             }
-        }
 
-        return `Error: DuckDuckGo search failed after ${maxRetries} attempts due to rate limiting. Please try again later. (Original error: ${lastError?.message})`;
+            const data = (await response.json()) as any;
+            const results: any[] = [];
+
+            // 1. Direct Abstract
+            if (data.AbstractText) {
+                results.push({
+                    title: data.Heading || input,
+                    link: data.AbstractURL,
+                    snippet: data.AbstractText
+                });
+            }
+
+            // 2. Related Topics (can be deep)
+            if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+                for (const topic of data.RelatedTopics) {
+                    if (topic.Text && topic.FirstURL) {
+                        results.push({
+                            title: input,
+                            link: topic.FirstURL,
+                            snippet: topic.Text
+                        });
+                    } else if (topic.Topics && Array.isArray(topic.Topics)) {
+                        // Handle nested categories
+                        for (const subTopic of topic.Topics) {
+                            if (subTopic.Text && subTopic.FirstURL) {
+                                results.push({
+                                    title: input,
+                                    link: subTopic.FirstURL,
+                                    snippet: subTopic.Text
+                                });
+                            }
+                        }
+                    }
+                    if (results.length >= 5) break;
+                }
+            }
+
+            if (results.length > 0) {
+                return JSON.stringify(results.slice(0, 5));
+            }
+
+            return "No instant answer found. The official DuckDuckGo API is limited to general topics. For deep web searching, please use a different tool or try a more specific entity name.";
+        } catch (error: any) {
+            return `Error connecting to DuckDuckGo API: ${error.message}`;
+        }
     }
 }
 
-export const searchTool = new DuckDuckGoSearch({ maxResults: 5 });
+export const factLookupTool = new FactLookupTool();

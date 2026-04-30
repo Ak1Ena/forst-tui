@@ -7,7 +7,7 @@ import { writeFileTool } from "./system/write_file.js";
 import { memoryTool } from "./system/memory.js";
 import { skillsTool } from "./system/skills.js";
 import { searchToolsTool } from "./system/search_tools.js";
-import { searchTool } from "./web/search.js";
+import { factLookupTool } from "./web/search.js";
 import { discordSendMessageTool } from "./integrations/discord.js";
 
 import { indexRepoTool } from "./system/index_repo.js";
@@ -25,7 +25,7 @@ export const registry: any[] = [
     memoryTool,
     skillsTool,
     searchToolsTool,
-    searchTool,
+    factLookupTool,
     discordSendMessageTool
 ];
 
