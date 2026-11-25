@@ -9,9 +9,10 @@ interface Props {
     currentSessionId?: number;
     taskQueue?: Task[];
     plannerMode?: boolean;
+    goal?: string | null;
 }
 
-export const Sidebar = ({ systemStats, tasks, sessions = [], currentSessionId, taskQueue = [], plannerMode }: Props) => {
+export const Sidebar = ({ systemStats, tasks, sessions = [], currentSessionId, taskQueue = [], plannerMode, goal }: Props) => {
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'pending': return '⏳';
@@ -24,6 +25,16 @@ export const Sidebar = ({ systemStats, tasks, sessions = [], currentSessionId, t
 
     return (
         <Box flexDirection="column" paddingX={1} width={30} borderStyle="round" borderColor="gray">
+            {goal && (
+                <>
+                    <Text bold color="blue">🎯 OVERALL GOAL</Text>
+                    <Box marginY={1}>
+                        <Text color="white">{goal.length > 60 ? goal.slice(0, 57) + '...' : goal}</Text>
+                    </Box>
+                    <Box borderStyle="single" borderTop={false} borderLeft={false} borderRight={false} marginBottom={1} />
+                </>
+            )}
+
             <Text bold color="cyan">📊 SYSTEM STATS</Text>
             <Box flexDirection="column" marginY={1}>
                 <Text>CPU:    <Text color={Number(systemStats?.cpu) > 80 ? 'red' : 'green'}>{systemStats?.cpu || '0.00'}%</Text></Text>

@@ -113,7 +113,7 @@ const syncGraphState = async (
     interactionMode: any,
     checkpointer: any,
     shortTermMemoryLimit: number,
-    payload: { messages?: BaseMessage[], taskQueue?: Task[] }
+    payload: { messages?: BaseMessage[], taskQueue?: Task[], goal?: string | null }
 ) => {
     if (!provider) return;
     try {
@@ -431,6 +431,10 @@ const App = () => {
                     dispatch({ type: 'SET_QUEUE', payload: output.taskQueue });
                 }
 
+                if (output && output.goal !== undefined) {
+                    dispatch({ type: 'SET_GOAL', payload: output.goal });
+                }
+
                 if (output && output.messages) {
                     const newMsgs = output.messages;
                     for (const msg of newMsgs) {
@@ -479,6 +483,14 @@ const App = () => {
                         if (role === 'assistant' && formattedMsg.content) {
                             accumulatedAssistantContent += (accumulatedAssistantContent ? "\n" : "") + formattedMsg.content;
                             
+                            if (formattedMsg.content.includes('GOAL:')) {
+                                const goalMatch = formattedMsg.content.match(/GOAL:\s*(.*)/);
+                                if (goalMatch && goalMatch[1]) {
+                                    const newGoal = goalMatch[1].trim();
+                                    dispatch({ type: 'SET_GOAL', payload: newGoal });
+                                }
+                            }
+
                             if (formattedMsg.content.includes('PLAN:')) {
                                 try {
                                     const planPart = formattedMsg.content.split('PLAN:')[1];
@@ -535,7 +547,7 @@ const App = () => {
                 systemPromptInjection: settings.systemPromptInjection
             } };
             
-            await appWorkflow.updateState(config, { taskQueue: state.taskQueue });
+            await appWorkflow.updateState(config, { taskQueue: state.taskQueue, goal: state.goal });
             
             const graphState = await appWorkflow.getState(config);
 
@@ -612,6 +624,7 @@ const App = () => {
                     setSessionList(getSessions());
                     dispatch({ type: 'SET_MESSAGES', payload: [] });
                     dispatch({ type: 'CLEAR_QUEUE' });
+                    dispatch({ type: 'SET_GOAL', payload: null });
                     dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Switched to new session [${newSid}]` } });
                     return;
                 }
@@ -622,6 +635,7 @@ const App = () => {
                         const msgs = getMessages(targetId);
                         dispatch({ type: 'SET_MESSAGES', payload: msgs });
                         dispatch({ type: 'CLEAR_QUEUE' });
+                        dispatch({ type: 'SET_GOAL', payload: null });
 
 
                         dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${targetId}]` } });
@@ -660,6 +674,7 @@ const App = () => {
             if (command === 'clear') {
                 dispatch({ type: 'SET_MESSAGES', payload: [] });
                 dispatch({ type: 'CLEAR_QUEUE' });
+                dispatch({ type: 'SET_GOAL', payload: null });
                 dispatch({ type: 'RESET_STATS' });
                 syncGraphState(
                     sessionId,
@@ -667,7 +682,7 @@ const App = () => {
                     state.interactionMode,
                     checkpointer,
                     configManager.getSettings().shortTermMemoryLimit,
-                    { messages: [REMOVE_ALL_MESSAGES as any] }
+                    { messages: [REMOVE_ALL_MESSAGES as any], goal: null }
                 );
                 return;
             }
@@ -904,6 +919,7 @@ const App = () => {
                                 const msgs = getMessages(id);
                                 dispatch({ type: 'SET_MESSAGES', payload: msgs });
                                 dispatch({ type: 'CLEAR_QUEUE' });
+                                dispatch({ type: 'SET_GOAL', payload: null });
                                 dispatch({ type: 'ADD_MESSAGE', payload: { role: 'system', content: `Resumed session [${id}]` } });
                                 setView('chat');
                             }}
@@ -961,6 +977,7 @@ const App = () => {
                                     currentSessionId={sessionId} 
                                     taskQueue={state.taskQueue}
                                     plannerMode={configManager.getSettings().plannerMode}
+                                    goal={state.goal}
                                 />
                             </Box>
 

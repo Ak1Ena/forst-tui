@@ -25,6 +25,10 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => ({ ...x, ...y }),
     default: () => ({}),
   }),
+  goal: Annotation<string | null>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
 });
 
 // Build the TF-IDF tool index lazily.
@@ -301,9 +305,14 @@ export const createAgentWorkflow = (
     let updatedQueue = syncTaskQueue(activeMessages, taskQueue);
     const syncCurrentTask = updatedQueue.find(t => t.status === 'in-progress');
 
+    let taskContext = "";
+    if (state.goal) {
+        taskContext += `\n\n[OVERALL GOAL]\n${state.goal}\n`;
+    }
+
     if (syncCurrentTask && syncCurrentTask.status !== 'failed') {
         const remaining = updatedQueue.filter(t => t.status === 'pending').length;
-        let taskContext = `\n\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n`;
+        taskContext += `\n[CURRENT TASK] (ID: ${syncCurrentTask.id})\n${syncCurrentTask.description}\n`;
         
         if (syncCurrentTask.recursiveLimit !== undefined) {
             taskContext += `- **Recursive Limit**: ${syncCurrentTask.recursiveLimit}\n`;
@@ -320,7 +329,9 @@ export const createAgentWorkflow = (
         
         taskContext += `\n` + (remaining > 0 ? `(${remaining} more task${remaining > 1 ? 's' : ''} queued after this)\n\n` : '') +
             `When you finish this task, write "COMPLETED: ${syncCurrentTask.id}" in your response.`;
+    }
 
+    if (taskContext) {
         if (activeMessages.length > 0 && activeMessages[0] instanceof SystemMessage) {
             const firstMsg = activeMessages[0];
             if (Array.isArray(firstMsg.content)) {

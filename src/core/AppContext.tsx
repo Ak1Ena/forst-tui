@@ -45,6 +45,7 @@ interface State {
     taskQueue: Task[];
     totalUsage: TokenUsage;
     toolStats: Record<string, ToolStat>;
+    goal: string | null;
 }
 
 type Action =
@@ -62,7 +63,8 @@ type Action =
     | { type: 'UPDATE_USAGE'; payload: Partial<TokenUsage> }
     | { type: 'RESET_USAGE' }
     | { type: 'UPDATE_TOOL_STATS'; payload: { name: string; ms: number } }
-    | { type: 'RESET_STATS' };
+    | { type: 'RESET_STATS' }
+    | { type: 'SET_GOAL'; payload: string | null };
 
 const initialState: State = {
     messages: [],
@@ -71,7 +73,8 @@ const initialState: State = {
     interactionMode: 'yolo',
     taskQueue: [],
     totalUsage: { input: 0, output: 0, total: 0, cached: 0 },
-    toolStats: {}
+    toolStats: {},
+    goal: null
 };
 
 const AppContext = createContext<{
@@ -131,6 +134,8 @@ function appReducer(state: State, action: Action): State {
             };
         case 'RESET_STATS':
             return { ...state, toolStats: {} };
+        case 'SET_GOAL':
+            return { ...state, goal: action.payload };
         default:
             return state;
     }

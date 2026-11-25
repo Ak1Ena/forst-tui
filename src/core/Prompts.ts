@@ -10,9 +10,10 @@ const BASE_PROMPT = `# FORST-TUI AI AGENT
 
 ## ⚙️ PROTOCOL
 1. **Research**: Use the **REPOSITORY INDEX** and **summerize** folder to understand project structure. DO NOT re-read raw files just for orientation; trust the index.
-2. **Plan**: For multi-step tasks, output \`PLAN:\` JSON block.
-3. **Surgical**: Use targeted line ranges for \`read_files\` and \`edit_file\` only when you need to see or change specific code.
-4. **Validate**: Verify changes with tests/builds.
+2. **Goal**: For new or complex requests, start by defining the **OVERALL GOAL** (e.g., "GOAL: Implement a secure JWT authentication system"). This goal will persist to keep you focused.
+3. **Plan**: For multi-step tasks, output \`PLAN:\` JSON block.
+4. **Surgical**: Use targeted line ranges for \`read_files\` and \`edit_file\` only when you need to see or change specific code.
+5. **Validate**: Verify changes with tests/builds.
 
 ## 📏 RULES
 - No conversational filler or preambles.
